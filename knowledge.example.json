@@ -1,0 +1,85 @@
+{
+  "knowledge": [
+    {
+      "id": "about-1",
+      "topic": "about",
+      "queries": [
+        "Who built this site?",
+        "Who made this website?",
+        "Who is the developer?",
+        "Tell me about the author"
+      ],
+      "answer": "This site was built by Jane Doe, a full-stack developer specialising in React and Node.js with over eight years of professional experience. Jane works with early-stage startups and growing product teams.",
+      "tags": ["about", "intro", "bio", "who"]
+    },
+    {
+      "id": "services-1",
+      "topic": "services",
+      "queries": [
+        "What services do you offer?",
+        "What kind of work do you do?",
+        "What can you help me with?"
+      ],
+      "answer": "We offer three core services: web and product development (React, Next.js, Node.js), API design and integration, and technical consulting for startups who need an experienced engineering partner. Engagements range from short one-week audits to ongoing monthly retainers.",
+      "tags": ["services", "work", "hire", "consulting"]
+    },
+    {
+      "id": "pricing-1",
+      "topic": "pricing",
+      "queries": [
+        "How much does it cost to hire you?",
+        "What are your rates?",
+        "How much do you charge?"
+      ],
+      "answer": "Consulting and development work is priced on a project or retainer basis after an initial conversation. Project rates typically start at $3,000 for a scoped deliverable. Monthly retainers for ongoing work start at $2,500. Reach out through the contact page and we can discuss what fits your situation.",
+      "tags": ["pricing", "cost", "rates", "budget", "hire"]
+    },
+    {
+      "id": "process-1",
+      "topic": "process",
+      "queries": [
+        "What does your development process look like?",
+        "How do you work?",
+        "What is your workflow?"
+      ],
+      "answer": "Every engagement starts with a discovery call to understand your goals and constraints. From there I write a brief scope document, agree on milestones, and we kick off work. I provide weekly progress updates and use GitHub for all code so you always have full visibility. Most projects wrap up within four to eight weeks depending on scope.",
+      "tags": ["process", "workflow", "timeline", "how it works"]
+    },
+    {
+      "id": "stack-1",
+      "topic": "tech",
+      "queries": [
+        "What technologies do you work with?",
+        "What is your tech stack?",
+        "What programming languages do you use?",
+        "Can you work with React?",
+        "Do you know TypeScript?"
+      ],
+      "answer": "Primary stack is TypeScript, React, Next.js, Node.js, and PostgreSQL. I'm comfortable with AWS infrastructure, Vercel deployments, Supabase, and Prisma. For mobile I use React Native. I'm happy to adapt to an existing stack if you already have one in place.",
+      "tags": ["tech", "stack", "technologies", "react", "node", "typescript"]
+    },
+    {
+      "id": "contact-1",
+      "topic": "contact",
+      "queries": [
+        "How do I get in touch?",
+        "How can I contact you?",
+        "What is your email?",
+        "How do I reach out?"
+      ],
+      "answer": "The best way to reach out is through the contact form at yoursite.com/contact. You can also email directly at hello@yoursite.com. I try to respond to all enquiries within one business day. If you're in a time-sensitive situation, mention that in your message and I'll prioritise it.",
+      "tags": ["contact", "email", "reach out", "get in touch", "hire"]
+    },
+    {
+      "id": "availability-1",
+      "topic": "availability",
+      "queries": [
+        "Are you currently available for new projects?",
+        "Are you taking new clients?",
+        "When can you start?"
+      ],
+      "answer": "Availability varies by month. The contact page has an up-to-date status. Even when fully booked I keep a short waitlist and can usually start new projects within two to three weeks. It's worth reaching out early if you have a specific start date in mind.",
+      "tags": ["availability", "booking", "schedule", "start date"]
+    }
+  ]
+}
