@@ -3,7 +3,7 @@ import type { SearchResult } from './types';
 export function buildAnswer(results: SearchResult[]): string {
   if (results.length === 0) return '';
   // Deduplicate by sourceId: query expansion produces multiple chunks per
-  // source entry (same answer, different query phrasings) — show each source once.
+  // source entry (same answer, different query phrasings) - show each source once.
   const seen = new Set<string>();
   const parts: string[] = [];
   for (const r of results) {

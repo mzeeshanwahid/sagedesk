@@ -108,7 +108,7 @@ export function useSageDesk(config: SageDeskConfig): UseSageDeskReturn {
     try {
       indexRef.current = await fetchIndex(config.indexUrl);
     } catch (err) {
-      console.warn('[sagedesk] Failed to load knowledge index from', config.indexUrl, '—', err);
+      console.warn('[sagedesk] Failed to load knowledge index from', config.indexUrl, '-', err);
       dispatch({
         type: 'SET_ENGINE_STATUS',
         payload: { status: 'error-index', error: String(err) },
@@ -129,7 +129,7 @@ export function useSageDesk(config: SageDeskConfig): UseSageDeskReturn {
       await embedderRef.current.load(config.agent.model);
       dispatch({ type: 'SET_ENGINE_STATUS', payload: { status: 'ready' } });
     } catch (err) {
-      console.warn('[sagedesk] WASM model failed to load, falling back to keyword search —', err);
+      console.warn('[sagedesk] WASM model failed to load, falling back to keyword search -', err);
       embedderRef.current = new EmbedderRuntime();
       dispatch({ type: 'SET_ENGINE_STATUS', payload: { status: 'degraded' } });
     }
@@ -220,7 +220,7 @@ export function useSageDesk(config: SageDeskConfig): UseSageDeskReturn {
             isFallback = true;
           }
         } catch (err) {
-          console.warn('[sagedesk] Query failed, showing fallback —', err);
+          console.warn('[sagedesk] Query failed, showing fallback -', err);
           botText = getFallback(config.agent);
           isFallback = true;
         }

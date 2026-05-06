@@ -1,6 +1,6 @@
 <div align="center">
   <img src="https://raw.githubusercontent.com/mzeeshanwahid/sagedesk/main/assets/cover.jpg" width="1200" alt="sagedesk cover" />
-  <h1>sagedesk</h1>
+  <h1 style="margin-top: 16px;">SageDesk</h1>
   <p>Local RAG-powered support chat widget. No API key. No backend. No monthly cost. Semantic search runs entirely in the visitor's browser via WebAssembly.</p>
 </div>
 
@@ -12,8 +12,8 @@
 
 ## How it works
 
-1.  **Build time** — You run `npx sagedesk build` on your machine. It reads your `knowledge.json`, embeds every entry using a local transformer model (default: `all-MiniLM-L6-v2`), and writes a minified vector index to a static JSON file.
-2.  **Runtime** — The widget fetches the index and loads the same model via WebAssembly. Visitor queries are embedded in-browser and matched against the index using optimized semantic search in under 100ms. **No API call is ever made.**
+1.  **Build time** - You run `npx sagedesk build` on your machine. It reads your `knowledge.json`, embeds every entry using a local transformer model (default: `all-MiniLM-L6-v2`), and writes a minified vector index to a static JSON file.
+2.  **Runtime** - The widget fetches the index and loads the same model via WebAssembly. Visitor queries are embedded in-browser and matched against the index using optimized semantic search in under 100ms. **No API call is ever made.**
 
 ---
 
@@ -25,7 +25,7 @@ npm install sagedesk
 
 ---
 
-## Step 1 — Write your knowledge file
+## Step 1 - Write your knowledge file
 
 Create `knowledge.json` at the root of your project.
 
@@ -61,7 +61,7 @@ Create `knowledge.json` at the root of your project.
 
 ---
 
-## Step 2 — Build the index
+## Step 2 - Build the index
 
 ```bash
 npx sagedesk build --input knowledge.json --output public/support-index.json
@@ -81,7 +81,7 @@ This generates the vector index. Run this whenever your knowledge file changes.
 
 ---
 
-## Step 3 — Add the widget
+## Step 3 - Add the widget
 
 ### Vanilla HTML / JS
 

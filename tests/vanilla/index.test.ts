@@ -53,7 +53,7 @@ describe('vanilla index', () => {
     const saved = (window as any).customElements;
     (window as any).customElements = undefined;
 
-    // Should not throw — runtime errors are swallowed and warned
+    // Should not throw - runtime errors are swallowed and warned
     expect(() => init(VALID_CONFIG)).not.toThrow();
 
     (window as any).customElements = saved;

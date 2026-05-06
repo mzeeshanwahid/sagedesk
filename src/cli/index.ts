@@ -12,7 +12,7 @@ const program = new Command();
 
 program
   .name('sagedesk')
-  .description('sagedesk — local RAG support widget build tool')
+  .description('sagedesk - local RAG support widget build tool')
   .version('1.0.0');
 
 export async function buildAction(options: {
@@ -28,7 +28,7 @@ export async function buildAction(options: {
   const modelName = (options.model ?? 'all-MiniLM-L6-v2') as SageDeskModel;
 
   console.log('');
-  console.log(chalk.bold('sagedesk') + ' — building vector index');
+  console.log(chalk.bold('sagedesk') + ' - building vector index');
   console.log('');
 
   // Read and validate knowledge file
@@ -72,7 +72,7 @@ export async function buildAction(options: {
     rawChunks.forEach((c, i) => {
       console.log(
         chalk.dim(
-          `  [${i + 1}/${rawChunks.length}] ${c.id} — "${c.text.slice(0, 60)}..."`
+          `  [${i + 1}/${rawChunks.length}] ${c.id} - "${c.text.slice(0, 60)}..."`
         )
       );
     });
@@ -95,14 +95,14 @@ export async function buildAction(options: {
 
   console.log('');
 
-  // Embed all chunks — embed the query text if present, otherwise the answer text
+  // Embed all chunks - embed the query text if present, otherwise the answer text
   const embedSpinner = ora(`Embedding ${rawChunks.length} chunks…`).start();
   const indexChunks: IndexChunk[] = [];
 
   try {
     for (let i = 0; i < rawChunks.length; i++) {
       const chunk = rawChunks[i];
-      embedSpinner.text = `Embedding chunk ${i + 1} / ${rawChunks.length} — ${chunk.id}`;
+      embedSpinner.text = `Embedding chunk ${i + 1} / ${rawChunks.length} - ${chunk.id}`;
 
       // Prefer embedding the query variation; fall back to the answer text
       const textToEmbed = chunk.question ?? chunk.text;

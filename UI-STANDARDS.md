@@ -2,7 +2,7 @@
 
 ## Design Philosophy
 
-The sagedesk widget supports three distinct themes — Classic, Light, and Dark — each with a coherent visual language. Rather than a single flat aesthetic, each theme expresses a specific personality: Classic is polished and assertive with gradient surfaces; Light is editorial and content-led with a warm white base; Dark is immersive with glassmorphism and ambient accent glows.
+The sagedesk widget supports three distinct themes - Classic, Light, and Dark - each with a coherent visual language. Rather than a single flat aesthetic, each theme expresses a specific personality: Classic is polished and assertive with gradient surfaces; Light is editorial and content-led with a warm white base; Dark is immersive with glassmorphism and ambient accent glows.
 
 The widget has two states: collapsed (the floating trigger button) and expanded (the full chat panel). Both states are per-theme and differ meaningfully across themes.
 
@@ -14,9 +14,9 @@ The default accent color is `#534AB7`. Every accent-dependent color is derived f
 
 Three themes are available via `agent.theme`:
 
-- `classic` — gradient header and trigger, distinguished speech-bubble layout.
-- `light` — editorial layout, pill trigger with label, text-style bot messages.
-- `dark` — glassmorphism panel, ambient glow, gradient user bubbles, full-width prompt chips.
+- `classic` - gradient header and trigger, distinguished speech-bubble layout.
+- `light` - editorial layout, pill trigger with label, text-style bot messages.
+- `dark` - glassmorphism panel, ambient glow, gradient user bubbles, full-width prompt chips.
 
 ---
 
@@ -30,7 +30,7 @@ Both the trigger and panel are rendered at `z-index: 9999`. The vanilla adapter 
 
 ### Classic
 - Shape: circle, 56px by 56px.
-- Background: gradient — `linear-gradient(135deg, accentColor 0%, color-mix(in oklab, accent 78%, #1a1340) 100%)`.
+- Background: gradient - `linear-gradient(135deg, accentColor 0%, color-mix(in oklab, accent 78%, #1a1340) 100%)`.
 - Icon: chat bubble SVG, white, 22px.
 - Box shadow: layered accent-tinted shadow.
 - On hover: `transform: scale(1.06)`, transition 150ms ease.
@@ -40,7 +40,7 @@ Both the trigger and panel are rendered at `z-index: 9999`. The vanilla adapter 
 - Shape: pill, height 52px, border-radius `999px`.
 - Background: `#fdfcf9` (warm off-white), border `rgba(20,20,40,0.08)`.
 - Contents: text label group on the left ("Chat with us" at 14px weight 600, "We typically reply in 1m" at 11px muted) + accent-colored circle with chat icon on the right.
-- No scale transform on hover — box shadow deepens instead.
+- No scale transform on hover - box shadow deepens instead.
 - Position: fixed, bottom 28px, right 28px.
 
 ### Dark
@@ -79,7 +79,7 @@ The vanilla adapter controls animation via `data-open` and `data-closing` attrib
 
 - Classic: `#ffffff`, box shadow with accent-tinted layers.
 - Light: `#fdfcf9`, box shadow with neutral purple-tinted layers.
-- Dark: `rgba(18, 16, 32, 0.86)` with `backdrop-filter: blur(40px) saturate(180%)` (glassmorphism). An ambient top-glow overlay (`sd-panel-glow`) sits at `z-index: 0` inside the panel — a radial gradient using the accent color.
+- Dark: `rgba(18, 16, 32, 0.86)` with `backdrop-filter: blur(40px) saturate(180%)` (glassmorphism). An ambient top-glow overlay (`sd-panel-glow`) sits at `z-index: 0` inside the panel - a radial gradient using the accent color.
 
 ---
 
@@ -96,7 +96,7 @@ The vanilla adapter controls animation via `data-open` and `data-closing` attrib
 
 ### Light
 - Padding: 18px 20px 14px.
-- Background: `#fdfcf9` (matches panel — no accent color in header).
+- Background: `#fdfcf9` (matches panel - no accent color in header).
 - Border bottom: `1px solid rgba(20,20,40,0.05)`.
 - Avatar: 36px circle, gradient `accent → color-mix(accent 55%, #fff)`.
 - No online dot on avatar.
@@ -131,7 +131,7 @@ Thread-specific padding and gap:
 | Light   | 22px 20px 16px    | 22px  | transparent (panel bg) |
 | Dark    | 8px 20px 16px     | 14px  | transparent (panel bg) |
 
-### Message Bubbles — Classic
+### Message Bubbles - Classic
 
 Bot messages:
 - Background: `#fff`, border `1px solid rgba(20,20,40,0.06)`, box shadow.
@@ -145,7 +145,7 @@ User messages:
 
 Timestamps: 11px, `#a8a8b0`, below bubble, `margin-top: 4px`.
 
-### Message Bubbles — Light
+### Message Bubbles - Light
 
 Bot messages use a side-by-side layout (not bubble): a 28px gradient avatar circle on the left, then a column with the agent name (13px, weight 600, `#1a1a2e`) + timestamp baseline-aligned, then the message text below (14px, line-height 1.55, color `#2a2a36`). No bubble background or border.
 
@@ -155,7 +155,7 @@ User messages:
 - Border: `1px solid color-mix(in oklab, accent 22%, transparent)`.
 - Border radius: `16px 16px 4px 16px`, max width 78%, weight 500.
 
-### Message Bubbles — Dark
+### Message Bubbles - Dark
 
 Both roles use the same bubble component, differentiated by `alignSelf`:
 - Bot: `rgba(255,255,255,0.05)` background, `rgba(255,255,255,0.06)` border, `border-radius: 14px 14px 14px 6px`, color `rgba(255,255,255,0.92)`, align flex-start.
@@ -173,11 +173,11 @@ All themes show a label above the fallback answer text:
 
 ### Typing Indicator
 
-Three animated dots, each 6px circle, staggered 0.2s bounce animation (`sd-bounce` keyframe — 5px vertical, 1.2s loop).
+Three animated dots, each 6px circle, staggered 0.2s bounce animation (`sd-bounce` keyframe - 5px vertical, 1.2s loop).
 
 - Classic: bubble wrapper with `#fff` background and border, same shape as bot bubble.
 - Light: side-by-side layout with a 28px gradient avatar circle + dots in a separate bubble `#fff` background.
-- Dark: styled exactly like a bot bubble — `rgba(255,255,255,0.05)` glass surface, dots `rgba(255,255,255,0.4)`.
+- Dark: styled exactly like a bot bubble - `rgba(255,255,255,0.05)` glass surface, dots `rgba(255,255,255,0.4)`.
 
 ---
 
@@ -242,7 +242,7 @@ All themes: send button has `aria-label="Send message"`. Input submits on Enter 
 
 ## Color System
 
-All accent-dependent surfaces derive from the single `accentColor` config value at render time. No CSS variable indirection — values are inlined into styles.
+All accent-dependent surfaces derive from the single `accentColor` config value at render time. No CSS variable indirection - values are inlined into styles.
 
 Accent-derived surfaces:
 - Classic trigger, header, user bubble: gradient using accent.
@@ -264,7 +264,7 @@ Theme-specific neutral surfaces are hardcoded per theme:
 
 ## Typography
 
-Font family: `inherit` on all elements — the widget matches the host page font.
+Font family: `inherit` on all elements - the widget matches the host page font.
 
 | Location                   | Size    | Weight |
 |----------------------------|---------|--------|
@@ -333,5 +333,5 @@ Both adapters use `font-family: inherit` so widget text still matches the host p
 - Never show a loading spinner that lasts more than 3 seconds without fallback feedback.
 - Never display a raw error object or stack trace to the visitor.
 - Never use font sizes below 11px.
-- Never show "I do not know" or similar blunt failure language — use the configured `fallback` message or pool.
-- Never call an external LLM API at runtime — all retrieval is local.
+- Never show "I do not know" or similar blunt failure language - use the configured `fallback` message or pool.
+- Never call an external LLM API at runtime - all retrieval is local.

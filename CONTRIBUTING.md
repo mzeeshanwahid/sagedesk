@@ -1,6 +1,6 @@
 # Contributing
 
-There are many ways to contribute to `sagedesk`, all of which are valuable. Before you start, please create an issue describing what you want to build or fix — someone may already be working on it, or there may be a reason it isn't implemented yet. The maintainer will point you in the right direction.
+There are many ways to contribute to `sagedesk`, all of which are valuable. Before you start, please create an issue describing what you want to build or fix - someone may already be working on it, or there may be a reason it isn't implemented yet. The maintainer will point you in the right direction.
 
 ## Development setup
 
@@ -17,7 +17,7 @@ There are many ways to contribute to `sagedesk`, all of which are valuable. Befo
    npm install
    ```
 
-3. Start experimenting — edit `src/` directly, or use `knowledge.example.json` as a scratch input to try things out.
+3. Start experimenting - edit `src/` directly, or use `knowledge.example.json` as a scratch input to try things out.
 
 ## Commands
 
@@ -43,21 +43,21 @@ Tests live in the `tests/` directory and use [Vitest](https://vitest.dev). When 
 
 Test files are organized by entry point and concern:
 
-- `tests/cli/builder-embedder.test.ts` — build-time embedding pipeline
-- `tests/cli/chunker.test.ts` — knowledge file parsing and chunking
-- `tests/cli/index.test.ts` — CLI command wiring and flags
-- `tests/cli/writer.test.ts` — vector index file output
-- `tests/core/embedder.test.ts` — in-browser embedding via `@huggingface/transformers`
-- `tests/core/search.test.ts` — cosine similarity and nearest-neighbour search
-- `tests/core/retriever.test.ts` — index loading and query orchestration
-- `tests/core/renderer.test.ts` — answer rendering and markdown handling
-- `tests/core/fallback.test.ts` — low-confidence fallback logic
-- `tests/vanilla/index.test.ts` — `init()` public API
-- `tests/vanilla/widget.test.ts` — widget lifecycle (mount, open, close, destroy)
-- `tests/vanilla/ui.test.ts` — DOM structure and theme variants
-- `tests/react/SageDeskWidget.test.tsx` — React component rendering and props
-- `tests/react/useSageDesk.test.ts` — `useSageDesk` hook behaviour
-- `tests/next/SageDeskNext.test.tsx` — Next.js App Router integration
+- `tests/cli/builder-embedder.test.ts` - build-time embedding pipeline
+- `tests/cli/chunker.test.ts` - knowledge file parsing and chunking
+- `tests/cli/index.test.ts` - CLI command wiring and flags
+- `tests/cli/writer.test.ts` - vector index file output
+- `tests/core/embedder.test.ts` - in-browser embedding via `@huggingface/transformers`
+- `tests/core/search.test.ts` - cosine similarity and nearest-neighbour search
+- `tests/core/retriever.test.ts` - index loading and query orchestration
+- `tests/core/renderer.test.ts` - answer rendering and markdown handling
+- `tests/core/fallback.test.ts` - low-confidence fallback logic
+- `tests/vanilla/index.test.ts` - `init()` public API
+- `tests/vanilla/widget.test.ts` - widget lifecycle (mount, open, close, destroy)
+- `tests/vanilla/ui.test.ts` - DOM structure and theme variants
+- `tests/react/SageDeskWidget.test.tsx` - React component rendering and props
+- `tests/react/useSageDesk.test.ts` - `useSageDesk` hook behaviour
+- `tests/next/SageDeskNext.test.tsx` - Next.js App Router integration
 
 ## Project structure
 
@@ -90,11 +90,11 @@ src/
 
 ## Pull request guidelines
 
-- Keep changes focused — one concern per PR.
+- Keep changes focused - one concern per PR.
 - Update or add tests for every change.
 - Run `npm run typecheck && npm test` locally before pushing.
 - If your change affects the public API or the `knowledge.json` schema, describe the impact clearly in the PR description.
-- The build-time model (set via `--model` in the CLI) and the runtime `agent.model` config **must match** — keep this invariant in mind when touching either path.
+- The build-time model (set via `--model` in the CLI) and the runtime `agent.model` config **must match** - keep this invariant in mind when touching either path.
 
 ## License
 

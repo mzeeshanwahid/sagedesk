@@ -2,7 +2,7 @@ import type { IndexChunk, SearchResult } from './types';
 
 // Both the query vector (embedder.ts, normalize:true) and stored vectors
 // (builder-embedder.ts, normalize:true) are guaranteed unit-length, so
-// cosine similarity reduces to a plain dot product — no norms needed.
+// cosine similarity reduces to a plain dot product - no norms needed.
 function dotProduct(a: Float32Array, b: Float32Array): number {
   if (a.length !== b.length) {
     throw new Error(`Vector dimension mismatch: query(${a.length}) vs index(${b.length})`);

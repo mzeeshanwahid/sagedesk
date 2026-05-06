@@ -37,7 +37,7 @@ export default defineConfig([
     clean: true,
     banner: { js: "'use client';" },
   },
-  // CLI — output as CJS so Node.js built-in require() calls inside bundled
+  // CLI - output as CJS so Node.js built-in require() calls inside bundled
   // deps (commander, ora, chalk) work regardless of the package "type":"module"
   {
     entry: { index: 'src/cli/index.ts' },
