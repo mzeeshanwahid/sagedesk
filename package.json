@@ -90,13 +90,41 @@
     "rag",
     "support",
     "wasm",
+    "webassembly",
     "semantic-search",
     "local-ai",
-    "no-api-key"
+    "no-api-key",
+    "chatbot",
+    "support-widget",
+    "help-widget",
+    "faq",
+    "knowledge-base",
+    "vector-search",
+    "embeddings",
+    "transformers",
+    "offline",
+    "privacy",
+    "react",
+    "nextjs",
+    "vanilla-js",
+    "web-component",
+    "floating-chat",
+    "customer-support",
+    "ai",
+    "nlp"
   ],
   "license": "MIT",
+  "homepage": "https://github.com/mzeeshanwahid/sagedesk#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-username/sagedesk"
-  }
+    "url": "https://github.com/mzeeshanwahid/sagedesk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mzeeshanwahid/sagedesk/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "sideEffects": false
 }
