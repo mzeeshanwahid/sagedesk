@@ -5,12 +5,13 @@ type PipelineFn = (
   options: { pooling: string; normalize: boolean }
 ) => Promise<{ data: Float32Array }>;
 
-// Maps each supported model alias to its canonical HuggingFace model ID.
-const HF_MODEL_IDS: Record<SageDeskModel, string> = {
-  'all-MiniLM-L6-v2': 'sentence-transformers/all-MiniLM-L6-v2',
-  'bge-small-en-v1-5': 'BAAI/bge-small-en-v1.5',
-  'paraphrase-multilingual-MiniLM-L12-v2': 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2',
-  'all-mpnet-base-v2': 'sentence-transformers/all-mpnet-base-v2',
+// Must stay in sync with embedder.ts and cli/builder-embedder.ts — same model IDs
+// ensure build-time and runtime vectors share the same embedding space.
+const XENOVA_IDS: Record<SageDeskModel, string> = {
+  'all-MiniLM-L6-v2': 'Xenova/all-MiniLM-L6-v2',
+  'bge-small-en-v1-5': 'Xenova/bge-small-en-v1.5',
+  'paraphrase-multilingual-MiniLM-L12-v2': 'Xenova/paraphrase-multilingual-MiniLM-L12-v2',
+  'all-mpnet-base-v2': 'Xenova/all-mpnet-base-v2',
 };
 
 /**
@@ -46,7 +47,7 @@ export class ServerEmbedder {
       return;
     }
 
-    const modelId = HF_MODEL_IDS[model];
+    const modelId = XENOVA_IDS[model];
     const loadPromise = this._loadModel(model, modelId);
     ServerEmbedder._loadingPromises.set(model, loadPromise);
 
@@ -64,12 +65,11 @@ export class ServerEmbedder {
 
   private async _loadModel(model: SageDeskModel, modelId: string): Promise<void> {
     try {
-      // device: 'wasm' forces pure WebAssembly backend — skips native ONNX Runtime
-      // which is unavailable on serverless platforms (Vercel, Lambda, etc.)
+      // device: 'cpu' is the v3.x name for the WASM/CPU backend (replaces 'wasm' from v2.x)
       const { pipeline } = await import('@huggingface/transformers');
       const pipelineInstance = (await pipeline('feature-extraction', modelId, {
         dtype: 'q8',
-        device: 'wasm',
+        device: 'cpu',
       })) as unknown as PipelineFn;
 
       ServerEmbedder._pipelineCache.set(model, pipelineInstance);
