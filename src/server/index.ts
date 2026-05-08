@@ -1,8 +1,7 @@
 import { readFileSync } from 'fs';
-import { ServerEmbedder } from '../core/server-embedder.js';
 import { search } from '../core/search.js';
 import { buildAnswer } from '../core/renderer.js';
-import type { IndexChunk, IndexFile, SageDeskModel, FallbackReason } from '../core/types.js';
+import type { IndexChunk, IndexFile, FallbackReason } from '../core/types.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -15,8 +14,6 @@ export interface SageDeskHandlerConfig {
   apiKey: string;
   /** LLM model name (e.g. 'deepseek-chat', 'gpt-4o-mini', 'llama3-8b-8192'). */
   model: string;
-  /** Embedding model - must match the model used at build time. Defaults to all-MiniLM-L6-v2. */
-  embeddingModel?: SageDeskModel;
   /** Number of chunks to retrieve for context. Defaults to 5. */
   topK?: number;
   /** Minimum similarity score for a chunk to be included. Defaults to 0.42. */
@@ -25,6 +22,11 @@ export interface SageDeskHandlerConfig {
   systemPrompt?: string;
   /** Timeout for LLM API calls in milliseconds. Defaults to 5000 (5 seconds). */
   llmTimeoutMs?: number;
+}
+
+interface QueryRequestBody {
+  query?: string;
+  queryVector?: number[];
 }
 
 // ─── Provider URL map ─────────────────────────────────────────────────────────
@@ -45,10 +47,9 @@ const DEFAULT_SYSTEM_PROMPT =
   'friendly message saying you don\'t have that information right now. Do not make up ' +
   'information or draw from outside knowledge. Be concise, warm, and helpful.';
 
-// ─── Server-side caches (module-level singletons) ─────────────────────────────
+// ─── Server-side cache (module-level singleton) ───────────────────────────────
 
 const indexCache = new Map<string, IndexChunk[]>();
-const embedderCache = new Map<string, ServerEmbedder>();
 
 function loadIndexFile(indexPath: string): IndexChunk[] {
   if (indexCache.has(indexPath)) return indexCache.get(indexPath)!;
@@ -66,15 +67,6 @@ function loadIndexFile(indexPath: string): IndexChunk[] {
 
   indexCache.set(indexPath, chunks);
   return chunks;
-}
-
-async function getEmbedder(model: SageDeskModel = 'all-MiniLM-L6-v2'): Promise<ServerEmbedder> {
-  if (embedderCache.has(model)) return embedderCache.get(model)!;
-
-  const embedder = new ServerEmbedder();
-  await embedder.load(model);
-  embedderCache.set(model, embedder);
-  return embedder;
 }
 
 // ─── Helper: Classify error for client-side logging ───────────────────────────
@@ -184,6 +176,7 @@ async function callLLM(
 
 async function handleQuery(
   query: string,
+  queryVector: Float32Array,
   config: SageDeskHandlerConfig
 ): Promise<{ answer: string; isFallback: boolean; fallbackReason?: FallbackReason }> {
   const {
@@ -191,7 +184,6 @@ async function handleQuery(
     provider,
     apiKey,
     model,
-    embeddingModel,
     topK = 5,
     minScore = 0.42,
     systemPrompt = DEFAULT_SYSTEM_PROMPT,
@@ -199,9 +191,6 @@ async function handleQuery(
   } = config;
 
   const index = loadIndexFile(indexPath);
-  const embedder = await getEmbedder(embeddingModel);
-
-  const queryVector = await embedder.embed(query);
   const results = search(queryVector, index, topK, minScore);
 
   if (results.length === 0) {
@@ -230,10 +219,38 @@ async function handleQuery(
   return { answer: llmResult.answer, isFallback: false };
 }
 
+// ─── Request parsing ──────────────────────────────────────────────────────────
+
+/**
+ * Parse and validate {query, queryVector} from a request body. Returns either a
+ * usable Float32Array (and the query string) or a string error code suitable
+ * for a 400 response.
+ */
+function parseBody(body: QueryRequestBody): { query: string; vector: Float32Array } | { error: string } {
+  const query = body.query?.trim();
+  if (!query) return { error: 'Missing query' };
+
+  const raw = body.queryVector;
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return { error: 'Missing queryVector' };
+  }
+  for (let i = 0; i < raw.length; i++) {
+    if (typeof raw[i] !== 'number' || !Number.isFinite(raw[i])) {
+      return { error: 'Invalid queryVector' };
+    }
+  }
+  return { query, vector: new Float32Array(raw) };
+}
+
 // ─── Next.js App Router handler ───────────────────────────────────────────────
 
 /**
  * Returns a Next.js App Router POST handler.
+ *
+ * Expects request body: `{ query: string, queryVector: number[] }`. The widget
+ * embeds the query in the browser (same WASM model as local mode) and sends
+ * both. This keeps the server function tiny and free of native ONNX binaries,
+ * so it deploys cleanly on Vercel / Lambda / any serverless runtime.
  *
  * @example
  * // app/api/sagedesk/route.ts
@@ -248,14 +265,14 @@ async function handleQuery(
 export function createSageDeskHandler(config: SageDeskHandlerConfig) {
   return async function POST(request: Request): Promise<Response> {
     try {
-      const body = (await request.json()) as { query?: string };
-      const query = body.query?.trim();
+      const body = (await request.json()) as QueryRequestBody;
+      const parsed = parseBody(body);
 
-      if (!query) {
-        return Response.json({ error: 'Missing query' }, { status: 400 });
+      if ('error' in parsed) {
+        return Response.json({ error: parsed.error }, { status: 400 });
       }
 
-      const result = await handleQuery(query, config);
+      const result = await handleQuery(parsed.query, parsed.vector, config);
       return Response.json(result);
     } catch (err) {
       console.error('[sagedesk/server] Handler error:', err);
@@ -267,7 +284,7 @@ export function createSageDeskHandler(config: SageDeskHandlerConfig) {
 // ─── Express / Connect middleware ─────────────────────────────────────────────
 
 type ExpressRequest = {
-  body: { query?: string };
+  body: QueryRequestBody;
 };
 type ExpressResponse = {
   status: (code: number) => ExpressResponse;
@@ -277,6 +294,9 @@ type NextFunction = (err?: unknown) => void;
 
 /**
  * Returns an Express (or any Connect-compatible) middleware.
+ *
+ * Expects `req.body` to be `{ query: string, queryVector: number[] }`. See
+ * `createSageDeskHandler` for the rationale.
  *
  * @example
  * // server.ts / index.ts
@@ -295,14 +315,14 @@ export function createSageDeskMiddleware(config: SageDeskHandlerConfig) {
     next: NextFunction
   ): Promise<void> {
     try {
-      const query = req.body?.query?.trim();
+      const parsed = parseBody(req.body ?? {});
 
-      if (!query) {
-        res.status(400).json({ error: 'Missing query' });
+      if ('error' in parsed) {
+        res.status(400).json({ error: parsed.error });
         return;
       }
 
-      const result = await handleQuery(query, config);
+      const result = await handleQuery(parsed.query, parsed.vector, config);
       res.json(result);
     } catch (err) {
       console.error('[sagedesk/server] Middleware error:', err);

@@ -9,14 +9,6 @@ vi.mock('fs', async (importOriginal) => {
   };
 });
 
-// Mock core modules
-vi.mock('../../src/core/server-embedder.js', () => ({
-  ServerEmbedder: vi.fn().mockImplementation(() => ({
-    load: vi.fn(),
-    embed: vi.fn(),
-  })),
-}));
-
 vi.mock('../../src/core/search.js', () => ({
   search: vi.fn(),
 }));
@@ -24,6 +16,13 @@ vi.mock('../../src/core/search.js', () => ({
 vi.mock('../../src/core/renderer.js', () => ({
   buildAnswer: vi.fn(),
 }));
+
+// A 384-dim vector built once and reused - matches the model's output dimensions.
+const FAKE_QUERY_VECTOR = Array.from({ length: 384 }, (_, i) => (i % 2 === 0 ? 0.01 : -0.01));
+
+function bodyWithVector(query: string): string {
+  return JSON.stringify({ query, queryVector: FAKE_QUERY_VECTOR });
+}
 
 describe('server/index.ts', () => {
   beforeEach(() => {
@@ -69,7 +68,7 @@ describe('server/index.ts', () => {
 
       const request = new Request('http://localhost/api/sagedesk', {
         method: 'POST',
-        body: JSON.stringify({}),
+        body: JSON.stringify({ queryVector: FAKE_QUERY_VECTOR }),
       });
 
       const response = await handler(request);
@@ -92,13 +91,59 @@ describe('server/index.ts', () => {
 
       const request = new Request('http://localhost/api/sagedesk', {
         method: 'POST',
-        body: JSON.stringify({ query: '   ' }),
+        body: JSON.stringify({ query: '   ', queryVector: FAKE_QUERY_VECTOR }),
       });
 
       const response = await handler(request);
       expect(response.status).toBe(400);
       const data = (await response.json()) as { error?: string };
       expect(data.error).toBe('Missing query');
+    });
+
+    it('should return 400 when queryVector is missing', async () => {
+      const { createSageDeskHandler } = await import(
+        '../../src/server/index.js'
+      );
+
+      const handler = createSageDeskHandler({
+        indexPath: './test-index.json',
+        provider: 'openai',
+        apiKey: 'test-key',
+        model: 'gpt-4o-mini',
+      });
+
+      const request = new Request('http://localhost/api/sagedesk', {
+        method: 'POST',
+        body: JSON.stringify({ query: 'hello' }),
+      });
+
+      const response = await handler(request);
+      expect(response.status).toBe(400);
+      const data = (await response.json()) as { error?: string };
+      expect(data.error).toBe('Missing queryVector');
+    });
+
+    it('should return 400 when queryVector contains non-numeric values', async () => {
+      const { createSageDeskHandler } = await import(
+        '../../src/server/index.js'
+      );
+
+      const handler = createSageDeskHandler({
+        indexPath: './test-index.json',
+        provider: 'openai',
+        apiKey: 'test-key',
+        model: 'gpt-4o-mini',
+      });
+
+      const request = new Request('http://localhost/api/sagedesk', {
+        method: 'POST',
+        body: JSON.stringify({ query: 'hello', queryVector: [0.1, 'oops', 0.2] }),
+      });
+
+      const response = await handler(request);
+      expect(response.status).toBe(400);
+      const data = (await response.json()) as { error?: string };
+      expect(data.error).toBe('Invalid queryVector');
     });
 
     it('should handle handler errors and return fallback with 500 status', async () => {
@@ -121,7 +166,7 @@ describe('server/index.ts', () => {
 
       const request = new Request('http://localhost/api/sagedesk', {
         method: 'POST',
-        body: JSON.stringify({ query: 'test query' }),
+        body: bodyWithVector('test query'),
       });
 
       const response = await handler(request);
@@ -144,29 +189,13 @@ describe('server/index.ts', () => {
 
       const request = new Request('http://localhost/api/sagedesk', {
         method: 'POST',
-        body: JSON.stringify({ query: '  test query  ' }),
+        body: JSON.stringify({ query: '  test query  ', queryVector: FAKE_QUERY_VECTOR }),
       });
 
       // This should not return a "missing query" error
       // It will fail on file read, but that's expected in test
       const response = await handler(request);
       expect(response.status).not.toBe(400);
-    });
-
-    it('should accept custom embedding model', async () => {
-      const { createSageDeskHandler } = await import(
-        '../../src/server/index.js'
-      );
-
-      const handler = createSageDeskHandler({
-        indexPath: './test-index.json',
-        provider: 'openai',
-        apiKey: 'test-key',
-        model: 'gpt-4o-mini',
-        embeddingModel: 'all-mpnet-base-v2',
-      });
-
-      expect(typeof handler).toBe('function');
     });
 
     it('should accept custom topK and minScore', async () => {
@@ -271,7 +300,7 @@ describe('server/index.ts', () => {
         model: 'gpt-4o-mini',
       });
 
-      const req = { body: { query: undefined } };
+      const req = { body: { queryVector: FAKE_QUERY_VECTOR } };
       const res = {
         status: vi.fn().mockReturnThis(),
         json: vi.fn(),
@@ -297,7 +326,7 @@ describe('server/index.ts', () => {
         model: 'gpt-4o-mini',
       });
 
-      const req = { body: { query: '   ' } };
+      const req = { body: { query: '   ', queryVector: FAKE_QUERY_VECTOR } };
       const res = {
         status: vi.fn().mockReturnThis(),
         json: vi.fn(),
@@ -308,6 +337,31 @@ describe('server/index.ts', () => {
 
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith({ error: 'Missing query' });
+    });
+
+    it('should return 400 when queryVector is missing', async () => {
+      const { createSageDeskMiddleware } = await import(
+        '../../src/server/index.js'
+      );
+
+      const middleware = createSageDeskMiddleware({
+        indexPath: './test-index.json',
+        provider: 'openai',
+        apiKey: 'test-key',
+        model: 'gpt-4o-mini',
+      });
+
+      const req = { body: { query: 'hello' } };
+      const res = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn(),
+      };
+      const next = vi.fn();
+
+      await middleware(req as any, res as any, next);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({ error: 'Missing queryVector' });
     });
 
     it('should call next(err) on error', async () => {
@@ -327,7 +381,7 @@ describe('server/index.ts', () => {
         throw new Error('Test error');
       });
 
-      const req = { body: { query: 'test' } };
+      const req = { body: { query: 'test', queryVector: FAKE_QUERY_VECTOR } };
       const res = {
         status: vi.fn().mockReturnThis(),
         json: vi.fn(),
@@ -351,7 +405,7 @@ describe('server/index.ts', () => {
         model: 'gpt-4o-mini',
       });
 
-      const req = { body: { query: '  test query  ' } };
+      const req = { body: { query: '  test query  ', queryVector: FAKE_QUERY_VECTOR } };
       const res = {
         status: vi.fn().mockReturnThis(),
         json: vi.fn(),
@@ -362,22 +416,6 @@ describe('server/index.ts', () => {
       await middleware(req as any, res as any, next);
 
       expect(res.status).not.toHaveBeenCalledWith(400);
-    });
-
-    it('should accept custom embedding model', async () => {
-      const { createSageDeskMiddleware } = await import(
-        '../../src/server/index.js'
-      );
-
-      const middleware = createSageDeskMiddleware({
-        indexPath: './test-index.json',
-        provider: 'openai',
-        apiKey: 'test-key',
-        model: 'gpt-4o-mini',
-        embeddingModel: 'all-mpnet-base-v2',
-      });
-
-      expect(typeof middleware).toBe('function');
     });
 
     it('should accept custom topK and minScore', async () => {
@@ -449,7 +487,6 @@ describe('server/index.ts', () => {
         provider: 'openai' as const,
         apiKey: 'test-key',
         model: 'gpt-4o-mini',
-        embeddingModel: 'all-MiniLM-L6-v2' as const,
         topK: 5,
         minScore: 0.42,
         systemPrompt: 'Default prompt',
@@ -474,7 +511,7 @@ describe('server/index.ts', () => {
       // Test with null body
       const request = new Request('http://localhost/api/sagedesk', {
         method: 'POST',
-        body: JSON.stringify({ query: null }),
+        body: JSON.stringify({ query: null, queryVector: FAKE_QUERY_VECTOR }),
       });
 
       const response = await handler(request);
@@ -543,7 +580,7 @@ describe('server/index.ts', () => {
 
       const request = new Request('http://localhost/api/sagedesk', {
         method: 'POST',
-        body: JSON.stringify({ query: 'test' }),
+        body: bodyWithVector('test'),
       });
 
       const response = await handler(request);
@@ -567,7 +604,7 @@ describe('server/index.ts', () => {
         provider: 'openai',
         apiKey: 'test-key',
         model: 'gpt-4o-mini',
-        // No embeddingModel, topK, minScore, or systemPrompt
+        // No topK, minScore, or systemPrompt
       });
 
       expect(typeof handler).toBe('function');
@@ -583,7 +620,6 @@ describe('server/index.ts', () => {
         provider: 'anthropic',
         apiKey: 'custom-key',
         model: 'claude-3-haiku',
-        embeddingModel: 'all-mpnet-base-v2',
         topK: 3,
         minScore: 0.6,
         systemPrompt: 'Custom system prompt',
@@ -605,7 +641,7 @@ describe('server/index.ts', () => {
       });
 
       const testQuery = 'What is this?';
-      const req = { body: { query: testQuery } };
+      const req = { body: { query: testQuery, queryVector: FAKE_QUERY_VECTOR } };
       const res = {
         status: vi.fn().mockReturnThis(),
         json: vi.fn(),

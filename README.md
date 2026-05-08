@@ -23,7 +23,9 @@ All embedding and semantic search runs entirely in the visitor's browser via Web
 
 ### LLM Mode
 
-The widget posts visitor queries to your own backend. Your backend handles embedding, retrieval, and LLM synthesis. The API key lives in your environment variables and never touches the browser. sagedesk provides ready-made server handlers for Next.js and Express - you own your entire stack.
+The widget embeds the visitor's query in the browser (same WASM model as local mode), then posts `{ query, queryVector }` to your own backend. Your backend does retrieval against the prebuilt index and calls your LLM provider for synthesis. The API key lives in your environment variables and never touches the browser. sagedesk provides ready-made server handlers for Next.js and Express - you own your entire stack.
+
+Because the embedder stays in the browser, the server function carries no native ONNX runtime and no model weights. It deploys cleanly on Vercel, AWS Lambda, and any other serverless platform with no special configuration - the built `sagedesk/server` bundle is under 10 KB.
 
 | | Local Mode | LLM Mode |
 |---|---|---|
@@ -220,7 +222,7 @@ app.use('/api/sagedesk', createSageDeskMiddleware({
 }));
 ```
 
-> **Serverless & Vercel compatible.** The server handler uses a pure WebAssembly embedding backend with no native binary dependencies. It works out of the box on Vercel, AWS Lambda, and any other serverless platform — no additional configuration required.
+> **Serverless ready.** The handler does no embedding - it only reads the prebuilt index, runs an in-memory dot-product search, and proxies one HTTP call to your LLM provider. There is no `@huggingface/transformers` import, no `onnxruntime-node`, and no native binaries on the server, so no `next.config.js` workarounds, no `outputFileTracingIncludes`, and no Vercel function-size hacks are needed. Just import and mount the handler.
 
 ### Step 3 - Configure the widget
 
@@ -307,7 +309,6 @@ createSageDeskHandler({
 | `provider` | `string` | yes | Provider name (e.g., `'openai'`, `'anthropic'`) or full API base URL (e.g., `'https://api.example.com/v1'`). |
 | `apiKey` | `string` | yes | LLM API key (server-side only). |
 | `model` | `string` | yes | Model name passed to the provider. |
-| `embeddingModel` | `string` | no | Must match build-time model. Defaults to `all-MiniLM-L6-v2`. |
 | `topK` | `number` | no | Number of chunks retrieved for context. Defaults to `5`. |
 | `minScore` | `number` | no | Minimum similarity score for a chunk. Defaults to `0.42`. |
 | `systemPrompt` | `string` | no | Override the default system prompt sent to the LLM. |
@@ -370,7 +371,7 @@ Applies to both modes.
 |---|:---:|:---:|---|
 | `name` | `string` | **Required** | Display name in the chat header. |
 | `theme` | `classic`, `light`, `dark` | `classic` | Visual style of the widget. |
-| `model` | `string` | `all-MiniLM-L6-v2` | Embedding model. Must match build-time model. Local mode only. |
+| `model` | `string` | `all-MiniLM-L6-v2` | Embedding model loaded by the browser. Must match the build-time model. Used by both modes - local mode embeds & searches in-browser; LLM mode embeds in-browser and posts the vector to your handler. |
 | `accentColor` | `string` | `#534AB7` | Hex color for primary UI elements. |
 | `greeting` | `string` | - | Initial message shown to visitors. |
 | `fallback` | `string` | - | Message shown when no answer is found. |
@@ -423,13 +424,13 @@ sagedesk defaults to `all-MiniLM-L6-v2` (~22MB), which offers an excellent balan
 | `paraphrase-multilingual-MiniLM-L12-v2` | 384 | ~45 MB | 50+ languages. |
 | `all-mpnet-base-v2` | 768 | ~85 MB | Maximum semantic quality. |
 
-> **Note:** The `--model` flag in `npx sagedesk build` must match the `agent.model` prop (local mode) or the `embeddingModel` option in your server handler (LLM mode).
+> **Note:** The `--model` flag in `npx sagedesk build` must match the `agent.model` prop on the widget. Both local mode and LLM mode embed in the browser using `agent.model`, and the resulting vectors must live in the same space as the index built by the CLI.
 
 ---
 
 ## Browser Support
 
-Requires **WebAssembly** support (local mode only - LLM mode has no browser requirements beyond `fetch`).
+Requires **WebAssembly** support. Both local and LLM mode embed visitor queries in-browser, so the same WASM-capable browsers are required for both. WASM is supported by all modern browsers (Chrome 57+, Firefox 52+, Safari 11+, Edge 16+).
 
 - Chrome 90+
 - Firefox 89+

@@ -24,7 +24,7 @@ All embedding, search, and retrieval happens in the visitor's browser via WebAss
 
 ### Mode 2. LLM Mode
 
-The consumer configures a server-side handler using a sagedesk-provided export. The widget posts the visitor query to that handler. The handler runs the embedding and vector search on the server, then passes the top matching chunks to an LLM for answer synthesis. The LLM API key lives in the consumer's own environment variables and never touches the browser.
+The consumer configures a server-side handler using a sagedesk-provided export. The widget embeds the visitor's query in the browser (same WASM model as local mode), then posts both the query string and the 384-dim query vector to that handler. The handler runs vector search against the prebuilt index and passes the top matching chunks to an LLM for answer synthesis. The LLM API key lives in the consumer's own environment variables and never touches the browser. The server itself never imports `@huggingface/transformers` or any native ONNX runtime, which keeps the function small and serverless-friendly.
 
 sagedesk does not operate any server in this mode. The consumer owns the entire stack.
 
@@ -48,9 +48,11 @@ When a visitor opens the site the widget fetches the pre-built vector index and 
 
 ### Phase 2. Runtime in LLM Mode (Consumer Server plus Visitor Browser)
 
-When a visitor submits a query the widget sends a POST request to the consumer's own backend endpoint. The sagedesk server handler on that endpoint embeds the query using the same all-MiniLM-L6-v2 model. It searches the vector index and retrieves the top K matching chunks. It builds a grounded prompt containing those chunks and calls the configured LLM provider API using the key from the consumer's environment variables. The LLM synthesizes a natural language answer strictly from the provided chunks. The answer is returned to the widget and displayed.
+When a visitor submits a query the widget embeds it in the browser using the same all-MiniLM-L6-v2 WASM model that local mode uses, then sends a POST request to the consumer's own backend endpoint with both the raw query string and the 384-dim query vector. The sagedesk server handler searches the vector index and retrieves the top K matching chunks. It builds a grounded prompt containing those chunks and calls the configured LLM provider API using the key from the consumer's environment variables. The LLM synthesizes a natural language answer strictly from the provided chunks. The answer is returned to the widget and displayed.
 
 If the retrieved chunks do not contain a confident answer, the LLM is instructed to return a friendly fallback message rather than hallucinate.
+
+Embedding stays on the client so the server function carries no native ONNX runtime and no model weights - the built `sagedesk/server` bundle is under 10 KB and deploys cleanly on Vercel, AWS Lambda, and any other serverless platform with no special configuration.
 
 ---
 
@@ -61,15 +63,16 @@ If the retrieved chunks do not contain a confident answer, the LLM is instructed
 ```
 Consumer's Browser (sagedesk widget)
         |
-        |  POST { query }
+        |-- Embed query (all-MiniLM-L6-v2, in-browser via WASM)
+        |
+        |  POST { query, queryVector }
         v
 Consumer's Own Server
         |
-        |-- 1. Embed query (all-MiniLM-L6-v2, server-side)
-        |-- 2. Search support-index.json, retrieve top-K chunks
-        |-- 3. Build grounded prompt with system instructions and chunks
-        |-- 4. Call LLM provider API (key from consumer .env)
-        |-- 5. Return synthesized answer
+        |-- 1. Search support-index.json with queryVector, retrieve top-K chunks
+        |-- 2. Build grounded prompt with system instructions and chunks
+        |-- 3. Call LLM provider API (key from consumer .env)
+        |-- 4. Return synthesized answer
         v
 Consumer's Browser (answer displayed in widget)
 ```
@@ -180,13 +183,13 @@ Visitors always receive a helpful response. The widget never shows an error mess
 
 ## The Model Strategy
 
-sagedesk uses a single-model strategy to ensure vector space compatibility. The default model is all-MiniLM-L6-v2, approximately 22MB. It is fast, lightweight, and highly effective for semantic similarity. The same model is used at build time and at runtime, whether runtime means the browser in local mode or the server in LLM mode. Developers can choose other models such as all-mpnet-base-v2 for higher quality at the cost of a larger download, provided the same model is used consistently across build and runtime.
+sagedesk uses a single-model strategy to ensure vector space compatibility. The default model is all-MiniLM-L6-v2, approximately 22MB. It is fast, lightweight, and highly effective for semantic similarity. The same model is used at build time (CLI, in Node.js) and at runtime (visitor browser, in WASM), in both local and LLM mode. The server handler does not run the model - it only consumes vectors produced by the browser. Developers can choose other models such as all-mpnet-base-v2 for higher quality at the cost of a larger download, provided the same model is used consistently between the build CLI and the widget's `agent.model` prop.
 
 ---
 
 ## Scope and Adapters
 
-Core Engine is a pure TypeScript module handling search, retrieval, and embedding. It is used both by the browser WASM path and the server handler.
+Core Engine is a pure TypeScript module. The search and retrieval helpers are used by both the browser WASM path and the server handler. The embedder runs in the browser only (and in the build CLI on the developer's machine).
 
 CLI is a Node.js tool for building the vector index via npx sagedesk build.
 
