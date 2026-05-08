@@ -1,5 +1,5 @@
 import { readFileSync } from 'fs';
-import { EmbedderRuntime } from '../core/embedder.js';
+import { ServerEmbedder } from '../core/server-embedder.js';
 import { search } from '../core/search.js';
 import { buildAnswer } from '../core/renderer.js';
 import type { IndexChunk, IndexFile, SageDeskModel, FallbackReason } from '../core/types.js';
@@ -48,7 +48,7 @@ const DEFAULT_SYSTEM_PROMPT =
 // ─── Server-side caches (module-level singletons) ─────────────────────────────
 
 const indexCache = new Map<string, IndexChunk[]>();
-const embedderCache = new Map<string, EmbedderRuntime>();
+const embedderCache = new Map<string, ServerEmbedder>();
 
 function loadIndexFile(indexPath: string): IndexChunk[] {
   if (indexCache.has(indexPath)) return indexCache.get(indexPath)!;
@@ -68,10 +68,10 @@ function loadIndexFile(indexPath: string): IndexChunk[] {
   return chunks;
 }
 
-async function getEmbedder(model: SageDeskModel = 'all-MiniLM-L6-v2'): Promise<EmbedderRuntime> {
+async function getEmbedder(model: SageDeskModel = 'all-MiniLM-L6-v2'): Promise<ServerEmbedder> {
   if (embedderCache.has(model)) return embedderCache.get(model)!;
 
-  const embedder = new EmbedderRuntime();
+  const embedder = new ServerEmbedder();
   await embedder.load(model);
   embedderCache.set(model, embedder);
   return embedder;

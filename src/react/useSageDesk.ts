@@ -1,7 +1,6 @@
 import { useState, useEffect, useReducer, useCallback, useRef, useMemo } from 'react';
 import { EmbedderRuntime } from '../core/embedder.js';
-import { fetchIndex } from '../core/retriever.js';
-import { retrieve } from '../core/retriever.js';
+import { fetchIndex, retrieve } from '../core/retriever.js';
 import { buildAnswer, extractChips } from '../core/renderer.js';
 import { getFallback } from '../core/fallback.js';
 import type {

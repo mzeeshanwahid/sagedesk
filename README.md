@@ -6,7 +6,7 @@
 
 <br/>
 
-<p align="center"><a href="https://www.npmjs.com/package/sagedesk"><img src="https://img.shields.io/npm/v/sagedesk?color=0ea5e9&label=npm" alt="npm version" /></a> <a href="./LICENSE"><img src="https://img.shields.io/npm/l/sagedesk?color=a855f7" alt="license" /></a> <a href="https://github.com/mzeeshanwahid/sagedesk/actions"><img src="https://img.shields.io/github/actions/workflow/status/mzeeshanwahid/sagedesk/ci.yml?label=tests" alt="tests" /></a> <a href="./package.json"><img src="https://img.shields.io/badge/dependencies-zero-f97316" alt="zero dependencies" /></a> <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.x-3178c6" alt="TypeScript" /></a></p>
+<p align="center"><a href="https://www.npmjs.com/package/sagedesk"><img src="https://img.shields.io/npm/v/sagedesk?color=0ea5e9&label=npm" alt="npm version" /></a> <a href="./LICENSE"><img src="https://img.shields.io/npm/l/sagedesk?color=a855f7" alt="license" /></a> <a href="https://github.com/mzeeshanwahid/sagedesk/actions"><img src="https://img.shields.io/github/actions/workflow/status/mzeeshanwahid/sagedesk/ci.yml?label=tests" alt="tests" /></a> <a href="./package.json"><img src="https://img.shields.io/npm/dependency-count/sagedesk?color=f97316" alt="dependencies" /></a> <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.x-3178c6" alt="TypeScript" /></a></p>
 
 ---
 
@@ -192,9 +192,10 @@ sagedesk exports a server handler from `sagedesk/server`. Drop it into your exis
 ```ts
 // app/api/sagedesk/route.ts
 import { createSageDeskHandler } from 'sagedesk/server';
+import { resolve } from 'path';
 
 export const POST = createSageDeskHandler({
-  indexPath: './public/support-index.json',
+  indexPath: resolve(process.cwd(), 'public', 'sagedesk-index.json'),
   provider: 'deepseek',
   apiKey: process.env.SAGEDESK_LLM_API_KEY!,
   model: 'deepseek-chat',
@@ -206,17 +207,20 @@ export const POST = createSageDeskHandler({
 ```ts
 import express from 'express';
 import { createSageDeskMiddleware } from 'sagedesk/server';
+import { resolve } from 'path';
 
 const app = express();
 app.use(express.json());
 
 app.use('/api/sagedesk', createSageDeskMiddleware({
-  indexPath: './public/support-index.json',
+  indexPath: resolve(process.cwd(), 'public', 'sagedesk-index.json'),
   provider: 'openai',
   apiKey: process.env.SAGEDESK_LLM_API_KEY!,
   model: 'gpt-4o-mini',
 }));
 ```
+
+> **Serverless & Vercel compatible.** The server handler uses a pure WebAssembly embedding backend with no native binary dependencies. It works out of the box on Vercel, AWS Lambda, and any other serverless platform — no additional configuration required.
 
 ### Step 3 - Configure the widget
 

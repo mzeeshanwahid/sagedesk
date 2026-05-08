@@ -12,15 +12,24 @@ function dotProduct(a: Float32Array, b: Float32Array): number {
   return dot;
 }
 
+// Inserts item at the correct descending-score position, then trims to maxLen.
+// Avoids Array.sort overhead on every insertion for small topK arrays.
+function insertSorted(arr: SearchResult[], item: SearchResult, maxLen: number): void {
+  arr.push(item);
+  let i = arr.length - 1;
+  while (i > 0 && arr[i - 1].score < arr[i].score) {
+    const tmp = arr[i - 1]; arr[i - 1] = arr[i]; arr[i] = tmp;
+    i--;
+  }
+  if (arr.length > maxLen) arr.pop();
+}
+
 export function search(
   queryVector: Float32Array,
   index: IndexChunk[],
   topK = 3,
   minScore = 0.42
 ): SearchResult[] {
-  // Use a simple selection sort approach for small topK, 
-  // or a full sort if index is small. For very large indexes, 
-  // a proper Heap would be better, but O(N * topK) is already better than O(N log N).
   const results: SearchResult[] = [];
 
   for (const chunk of index) {
@@ -28,11 +37,14 @@ export function search(
     if (score < minScore) continue;
 
     if (results.length < topK) {
-      results.push({ chunk, score });
-      results.sort((a, b) => b.score - a.score);
+      insertSorted(results, { chunk, score }, topK);
     } else if (score > results[topK - 1].score) {
       results[topK - 1] = { chunk, score };
-      results.sort((a, b) => b.score - a.score);
+      let i = topK - 1;
+      while (i > 0 && results[i - 1].score < results[i].score) {
+        const tmp = results[i - 1]; results[i - 1] = results[i]; results[i] = tmp;
+        i--;
+      }
     }
   }
 
@@ -56,17 +68,23 @@ export function keywordSearch(
 
   for (const chunk of index) {
     const chunkLower = chunk.textLower || chunk.text.toLowerCase();
-    const matchCount = terms.filter((t) => chunkLower.includes(t)).length;
+    let matchCount = 0;
+    for (const t of terms) {
+      if (chunkLower.includes(t)) matchCount++;
+    }
     const score = matchCount / terms.length;
 
     if (score <= 0) continue;
 
     if (results.length < topK) {
-      results.push({ chunk, score });
-      results.sort((a, b) => b.score - a.score);
+      insertSorted(results, { chunk, score }, topK);
     } else if (score > results[topK - 1].score) {
       results[topK - 1] = { chunk, score };
-      results.sort((a, b) => b.score - a.score);
+      let i = topK - 1;
+      while (i > 0 && results[i - 1].score < results[i].score) {
+        const tmp = results[i - 1]; results[i - 1] = results[i]; results[i] = tmp;
+        i--;
+      }
     }
   }
 

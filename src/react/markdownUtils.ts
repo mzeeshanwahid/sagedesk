@@ -18,15 +18,10 @@ const PURIFY_CONFIG = {
   ALLOW_DATA_ATTR: false,
 };
 
-// Add target="_blank" and rel="noopener noreferrer" to links
-const HOOK_ALLOWLIST = ['a'];
-
 DOMPurify.addHook('afterSanitizeAttributes', (node) => {
-  if (HOOK_ALLOWLIST.includes(node.tagName.toLowerCase())) {
-    if (node.tagName.toLowerCase() === 'a') {
-      node.setAttribute('target', '_blank');
-      node.setAttribute('rel', 'noopener noreferrer');
-    }
+  if (node.tagName.toLowerCase() === 'a') {
+    node.setAttribute('target', '_blank');
+    node.setAttribute('rel', 'noopener noreferrer');
   }
 });
 

@@ -10,8 +10,8 @@ vi.mock('fs', async (importOriginal) => {
 });
 
 // Mock core modules
-vi.mock('../../src/core/embedder.js', () => ({
-  EmbedderRuntime: vi.fn().mockImplementation(() => ({
+vi.mock('../../src/core/server-embedder.js', () => ({
+  ServerEmbedder: vi.fn().mockImplementation(() => ({
     load: vi.fn(),
     embed: vi.fn(),
   })),
