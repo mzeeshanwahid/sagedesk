@@ -11,6 +11,22 @@ import type {
   EngineStatus,
 } from '../core/types.js';
 
+// ─── Fallback logging ─────────────────────────────────────────────────────────
+
+function logFallbackWarning(reason?: string): void {
+  if (!reason) return;
+
+  const messages: Record<string, string> = {
+    'auth-error': '[sagedesk] Support service authentication failed. Showing relevant knowledge instead.',
+    'quota-exceeded': '[sagedesk] Support service quota exhausted. Showing relevant knowledge instead.',
+    'timeout': '[sagedesk] Support service took too long to respond. Showing relevant knowledge instead.',
+    'api-error': '[sagedesk] Support service error. Showing relevant knowledge instead.',
+    'malformed-response': '[sagedesk] Support service returned invalid response. Showing relevant knowledge instead.',
+  };
+
+  console.warn(messages[reason] || '[sagedesk] Support service unavailable. Showing relevant knowledge instead.');
+}
+
 // ─── State ────────────────────────────────────────────────────────────────────
 
 interface State {
@@ -103,10 +119,17 @@ export function useSageDesk(config: SageDeskConfig): UseSageDeskReturn {
     if (engineStartedRef.current) return;
     engineStartedRef.current = true;
 
+    // LLM mode: no local index or WASM model needed - mark ready immediately.
+    if (config.mode === 'llm') {
+      setChips(config.agent.suggestedChips ?? []);
+      dispatch({ type: 'SET_ENGINE_STATUS', payload: { status: 'ready' } });
+      return;
+    }
+
     dispatch({ type: 'SET_ENGINE_STATUS', payload: { status: 'loading-index' } });
 
     try {
-      indexRef.current = await fetchIndex(config.indexUrl);
+      indexRef.current = await fetchIndex(config.indexUrl!);
     } catch (err) {
       console.warn('[sagedesk] Failed to load knowledge index from', config.indexUrl, '-', err);
       dispatch({
@@ -133,7 +156,7 @@ export function useSageDesk(config: SageDeskConfig): UseSageDeskReturn {
       embedderRef.current = new EmbedderRuntime();
       dispatch({ type: 'SET_ENGINE_STATUS', payload: { status: 'degraded' } });
     }
-  }, [config.indexUrl, config.agent.suggestedChips, addMessage]);
+  }, [config.mode, config.indexUrl, config.agent.suggestedChips, addMessage]);
 
   const greetingShownRef = useRef(false);
 
@@ -199,9 +222,43 @@ export function useSageDesk(config: SageDeskConfig): UseSageDeskReturn {
 
       let botText: string;
       let isFallback = false;
-      let mode: 'vector' | 'keyword' = 'keyword';
+      let fallbackReason: string | undefined;
+      let retrievalMode: 'vector' | 'keyword' = 'keyword';
 
-      if (!indexRef.current) {
+      if (config.mode === 'llm') {
+        // LLM mode: POST query to the consumer's own backend endpoint.
+        if (!config.endpoint) {
+          console.warn('[sagedesk] LLM mode requires an "endpoint" prop.');
+          botText = getFallback(config.agent);
+          isFallback = true;
+        } else {
+          try {
+            const res = await fetch(config.endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ query: trimmed }),
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = (await res.json()) as {
+              answer: string;
+              isFallback: boolean;
+              fallbackReason?: string;
+            };
+            if (data.isFallback || !data.answer) {
+              fallbackReason = data.fallbackReason;
+              logFallbackWarning(fallbackReason);
+              botText = getFallback(config.agent);
+              isFallback = true;
+            } else {
+              botText = data.answer;
+            }
+          } catch (err) {
+            console.warn('[sagedesk] Support service unavailable. Using cached knowledge instead.');
+            botText = getFallback(config.agent);
+            isFallback = true;
+          }
+        }
+      } else if (!indexRef.current) {
         botText = getFallback(config.agent);
         isFallback = true;
       } else {
@@ -212,7 +269,7 @@ export function useSageDesk(config: SageDeskConfig): UseSageDeskReturn {
             embedderRef.current!,
             config.search
           );
-          mode = res.mode;
+          retrievalMode = res.mode;
           if (res.results.length > 0) {
             botText = buildAnswer(res.results);
           } else {
@@ -226,12 +283,15 @@ export function useSageDesk(config: SageDeskConfig): UseSageDeskReturn {
         }
       }
 
-      const elapsed = Date.now() - typingStart;
-      // Artificial "thinking" delay: 3-5s in normal mode, 800ms-2.8s in degraded/fallback mode.
-      const delayBase = (mode === 'keyword' || isFallback) ? 800 : 3000;
-      const minTypingMs = delayBase + Math.random() * 2000;
-      const remaining = minTypingMs - elapsed;
-      if (remaining > 0) await new Promise((r) => setTimeout(r, remaining));
+      // In LLM mode the real network+LLM latency already provides natural delay.
+      // In local mode apply an artificial "thinking" pause for a more natural feel.
+      if (config.mode !== 'llm') {
+        const elapsed = Date.now() - typingStart;
+        const delayBase = (retrievalMode === 'keyword' || isFallback) ? 800 : 3000;
+        const minTypingMs = delayBase + Math.random() * 2000;
+        const remaining = minTypingMs - elapsed;
+        if (remaining > 0) await new Promise((r) => setTimeout(r, remaining));
+      }
 
       dispatch({ type: 'SET_TYPING', payload: false });
       addMessage({ role: 'bot', text: botText, isFallback });

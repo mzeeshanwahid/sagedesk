@@ -7,6 +7,10 @@ export type SageDeskModel =
 
 export type Theme = 'classic' | 'light' | 'dark';
 
+// Operating mode: 'local' runs entirely in the browser (default); 'llm' posts to the
+// consumer's own backend which handles embedding, retrieval, and LLM synthesis.
+export type SageDeskMode = 'local' | 'llm';
+
 export interface AgentConfig {
   name: string;
   // Embedding model for semantic search. Defaults to all-MiniLM-L6-v2.
@@ -20,7 +24,6 @@ export interface AgentConfig {
   position?: 'bottom-right' | 'bottom-left';
   avatarUrl?: string;
   contactUrl?: string;
-  poweredBy?: boolean;
   suggestedChips?: string[];
 }
 
@@ -30,7 +33,13 @@ export interface SearchConfig {
 }
 
 export interface SageDeskConfig {
-  indexUrl: string;
+  // 'local' (default): all embedding and search runs in the browser via WASM.
+  // 'llm': the widget POSTs queries to the consumer's own backend endpoint.
+  mode?: SageDeskMode;
+  // Required in local mode. URL to the pre-built vector index JSON file.
+  indexUrl?: string;
+  // Required in llm mode. Consumer's own backend endpoint that accepts POST { query }.
+  endpoint?: string;
   agent: AgentConfig;
   search?: SearchConfig;
 }
@@ -83,11 +92,14 @@ export interface SearchResult {
   score: number;
 }
 
+export type FallbackReason = 'auth-error' | 'quota-exceeded' | 'timeout' | 'api-error' | 'malformed-response';
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'bot';
   text: string;
   isFallback?: boolean;
+  fallbackReason?: FallbackReason;
   timestamp: Date;
 }
 

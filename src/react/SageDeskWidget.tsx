@@ -7,7 +7,8 @@ import React, {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useSageDesk } from './useSageDesk.js';
-import type { SageDeskConfig, ChatMessage, Theme } from '../core/types.js';
+import { parseMarkdown } from './markdownUtils.js';
+import type { SageDeskConfig, ChatMessage, Theme, SageDeskMode } from '../core/types.js';
 
 // ─── Per-theme CSS injection ──────────────────────────────────────────────────
 // Only the styles for the active theme are injected, keeping the runtime
@@ -41,6 +42,28 @@ const SHARED = `
   }
   .sd-r-scrollable::-webkit-scrollbar { display: none !important; }
   .sd-r-scrollable > * { flex-shrink: 0 !important; }
+  .sd-r-markdown h1, .sd-r-markdown h2, .sd-r-markdown h3, .sd-r-markdown h4, .sd-r-markdown h5, .sd-r-markdown h6 {
+    margin: 12px 0 8px 0 !important; font-weight: 600 !important; line-height: 1.3 !important;
+  }
+  .sd-r-markdown h1 { font-size: 1.3em !important; }
+  .sd-r-markdown h2 { font-size: 1.2em !important; }
+  .sd-r-markdown h3 { font-size: 1.1em !important; }
+  .sd-r-markdown h4, .sd-r-markdown h5, .sd-r-markdown h6 { font-size: 1em !important; }
+  .sd-r-markdown strong { font-weight: 600 !important; }
+  .sd-r-markdown em { font-style: italic !important; }
+  .sd-r-markdown u { text-decoration: underline !important; }
+  .sd-r-markdown ul, .sd-r-markdown ol { margin: 8px 0 !important; padding-left: 20px !important; }
+  .sd-r-markdown li { margin: 4px 0 !important; }
+  .sd-r-markdown blockquote { margin: 8px 0 !important; padding-left: 12px !important; border-left: 3px solid currentColor !important; opacity: 0.8 !important; }
+  .sd-r-markdown code { font-family: 'Monaco', 'Courier New', monospace !important; font-size: 0.9em !important; padding: 2px 4px !important; background: rgba(0,0,0,0.05) !important; border-radius: 3px !important; }
+  .sd-r-markdown pre { background: rgba(0,0,0,0.05) !important; padding: 8px 10px !important; border-radius: 6px !important; overflow-x: auto !important; margin: 8px 0 !important; }
+  .sd-r-markdown pre code { background: none !important; padding: 0 !important; }
+  .sd-r-markdown hr { border: none !important; border-top: 1px solid currentColor !important; opacity: 0.3 !important; margin: 10px 0 !important; }
+  .sd-r-markdown a { text-decoration: underline !important; opacity: 0.9 !important; }
+  .sd-r-markdown a:hover { opacity: 1 !important; }
+  .sd-r-markdown p { margin: 6px 0 !important; }
+  .sd-r-markdown > *:first-child { margin-top: 0 !important; }
+  .sd-r-markdown > *:last-child { margin-bottom: 0 !important; }
   @media (max-width: 420px) {
     .sd-r-panel {
       bottom: 0 !important; right: 0 !important; left: 0 !important;
@@ -148,7 +171,7 @@ const PoweredBy = ({ dark = false }: { dark?: boolean }) => (
     <a
       href="https://github.com/mzeeshanwahid/sagedesk"
       target="_blank"
-      rel="noopener noreferrer"
+      rel="noopener"
       style={{
         color: dark ? 'rgba(255,255,255,0.7)' : '#5a5a64',
         fontWeight: 500,
@@ -164,6 +187,8 @@ const PoweredBy = ({ dark = false }: { dark?: boolean }) => (
 
 function ClassicMessageBubble({ msg, accent }: { msg: ChatMessage; accent: string }) {
   const isBot = msg.role === 'bot';
+  const renderedHtml = isBot ? parseMarkdown(msg.text) : msg.text;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: isBot ? 'flex-start' : 'flex-end', gap: '4px' }}>
       {msg.isFallback && (
@@ -183,11 +208,14 @@ function ClassicMessageBubble({ msg, accent }: { msg: ChatMessage; accent: strin
         boxShadow: isBot
           ? '0 1px 2px rgba(20,20,40,0.04)'
           : `0 6px 16px -6px color-mix(in oklab, ${accent} 60%, transparent)`,
-        whiteSpace: 'pre-wrap',
         wordBreak: 'break-word',
         fontFamily: 'inherit',
-      }}>
-        {msg.text}
+      }} className="sd-r-markdown">
+        {isBot ? (
+          <div dangerouslySetInnerHTML={{ __html: renderedHtml }} />
+        ) : (
+          <div style={{ whiteSpace: 'pre-wrap' }}>{msg.text}</div>
+        )}
       </div>
       <span style={{
         fontSize: '11px', color: '#a8a8b0', marginTop: '2px',
@@ -220,6 +248,8 @@ function ClassicTypingIndicator() {
 
 function LightMessageBubble({ msg, accent, agentName }: { msg: ChatMessage; accent: string; agentName: string }) {
   const isBot = msg.role === 'bot';
+  const renderedHtml = isBot ? parseMarkdown(msg.text) : msg.text;
+
   if (isBot) {
     return (
       <div style={{ display: 'flex', gap: '10px' }}>
@@ -236,8 +266,8 @@ function LightMessageBubble({ msg, accent, agentName }: { msg: ChatMessage; acce
           {msg.isFallback && (
             <p style={{ fontSize: '11px', color: '#9b9aa3', margin: '0 0 4px', fontFamily: 'inherit' }}>Not sure about that one</p>
           )}
-          <div style={{ fontSize: '14px', lineHeight: 1.55, color: '#2a2a36', fontFamily: 'inherit', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-            {msg.text}
+          <div style={{ fontSize: '14px', lineHeight: 1.55, color: '#2a2a36', fontFamily: 'inherit', wordBreak: 'break-word' }} className="sd-r-markdown">
+            <div dangerouslySetInnerHTML={{ __html: renderedHtml }} />
           </div>
         </div>
       </div>
@@ -286,6 +316,8 @@ function LightTypingIndicator({ accent }: { accent: string }) {
 
 function DarkMessageBubble({ msg, accent }: { msg: ChatMessage; accent: string }) {
   const isBot = msg.role === 'bot';
+  const renderedHtml = isBot ? parseMarkdown(msg.text) : msg.text;
+
   return (
     <div style={{
       maxWidth: '85%',
@@ -300,16 +332,19 @@ function DarkMessageBubble({ msg, accent }: { msg: ChatMessage; accent: string }
       color: isBot ? 'rgba(255,255,255,0.92)' : '#fff',
       alignSelf: isBot ? 'flex-start' : 'flex-end',
       boxShadow: isBot ? 'none' : `0 8px 20px -8px color-mix(in oklab, ${accent} 70%, transparent)`,
-      whiteSpace: 'pre-wrap',
       wordBreak: 'break-word',
       fontFamily: 'inherit',
-    }}>
+    }} className={isBot ? 'sd-r-markdown' : ''}>
       {msg.isFallback && (
         <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: '4px' }}>
           Not sure about that one
         </span>
       )}
-      {msg.text}
+      {isBot ? (
+        <div dangerouslySetInnerHTML={{ __html: renderedHtml }} />
+      ) : (
+        <div style={{ whiteSpace: 'pre-wrap' }}>{msg.text}</div>
+      )}
     </div>
   );
 }
@@ -805,25 +840,38 @@ function renderDark(p: ThemeRenderProps) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export interface SageDeskWidgetProps {
-  indexUrl: string;
+  /** Operating mode. 'local' (default) runs entirely in the browser via WASM. 'llm' posts to the consumer's own backend. */
+  mode?: SageDeskMode;
+  /** URL to the pre-built vector index. Required in local mode. */
+  indexUrl?: string;
+  /** Consumer's backend endpoint that accepts POST { query }. Required in llm mode. */
+  endpoint?: string;
   agent: SageDeskConfig['agent'];
   search?: SageDeskConfig['search'];
 }
 
-export function SageDeskWidget({ indexUrl, agent, search }: SageDeskWidgetProps) {
-  // Validate required props synchronously so the error surfaces immediately in
-  // the browser console with a full stack trace rather than as a silent warn.
-  if (!indexUrl) {
-    throw new Error(
-      '[sagedesk] Required prop "indexUrl" is missing. ' +
-      'Run `npx sagedesk build` and pass the output path, e.g. indexUrl="/support-index.json".'
-    );
-  }
+export function SageDeskWidget({ mode, indexUrl, endpoint, agent, search }: SageDeskWidgetProps) {
+  const resolvedMode = mode ?? 'local';
+
   if (!agent?.name) {
     throw new Error('[sagedesk] Required prop "agent.name" is missing.');
   }
 
-  const config: SageDeskConfig = { indexUrl, agent, search };
+  if (resolvedMode === 'local' && !indexUrl) {
+    throw new Error(
+      '[sagedesk] Required prop "indexUrl" is missing for local mode. ' +
+      'Run `npx sagedesk build` and pass the output path, e.g. indexUrl="/support-index.json".'
+    );
+  }
+
+  if (resolvedMode === 'llm' && !endpoint) {
+    throw new Error(
+      '[sagedesk] Required prop "endpoint" is missing for llm mode. ' +
+      'Provide your backend route, e.g. endpoint="/api/sagedesk".'
+    );
+  }
+
+  const config: SageDeskConfig = { mode: resolvedMode, indexUrl, endpoint, agent, search };
   const { state, chips, open, close, submit } = useSageDesk(config);
 
   const theme = agent.theme ?? 'classic';
@@ -839,7 +887,8 @@ export function SageDeskWidget({ indexUrl, agent, search }: SageDeskWidgetProps)
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    if (!indexUrl.startsWith('/') && !indexUrl.startsWith('http')) {
+    if (resolvedMode === 'local' && indexUrl &&
+        !indexUrl.startsWith('/') && !indexUrl.startsWith('http')) {
       console.warn(
         `[sagedesk] indexUrl "${indexUrl}" looks like a relative path. ` +
         'It should start with "/" so it resolves correctly from any page.'
@@ -889,7 +938,7 @@ export function SageDeskWidget({ indexUrl, agent, search }: SageDeskWidgetProps)
 
   if (!mounted || typeof document === 'undefined') return null;
 
-  const showPoweredBy = agent.poweredBy !== false;
+  const showPoweredBy = true;
   const showChips = chips.length > 0;
   const panelClass = isClosing ? 'sd-r-closing' : state.isOpen ? 'sd-r-opening' : '';
 

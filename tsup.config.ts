@@ -51,4 +51,16 @@ export default defineConfig([
     platform: 'node',
     sourcemap: false,
   },
+  // Server handler - Node.js-only export for LLM mode (createSageDeskHandler / createSageDeskMiddleware)
+  {
+    entry: { index: 'src/server/index.ts' },
+    outDir: 'dist/server',
+    format: ['esm', 'cjs'],
+    dts: true,
+    clean: true,
+    external: ['@huggingface/transformers'],
+    target: 'node18',
+    platform: 'node',
+    sourcemap: true,
+  },
 ]);

@@ -76,11 +76,8 @@ export class SageDeskWidget extends HTMLElement {
   }
 
   private _buildPanelHTML(agentName: string, accent: string, theme: Theme): string {
-    const showPoweredBy = this._config.agent.poweredBy !== false;
     const avatarUrl     = this._config.agent.avatarUrl;
-    const footerHTML    = showPoweredBy
-      ? `<div class="sd-footer">Powered by <a class="sd-footer-link" href="https://github.com/mzeeshanwahid/sagedesk" target="_blank" rel="noopener noreferrer">sagedesk</a></div>`
-      : '';
+    const footerHTML    = `<div class="sd-footer">Powered by <a class="sd-footer-link" href="https://github.com/mzeeshanwahid/sagedesk" target="_blank" rel="noopener">sagedesk</a></div>`;
 
     if (theme === 'dark') {
       const avatarContent = avatarUrl
@@ -299,6 +296,11 @@ export class SageDeskWidget extends HTMLElement {
   }
 
   private async _startEngine(): Promise<void> {
+    if (!this._config.indexUrl) {
+      this._engineError = 'indexUrl is required for the vanilla widget (local mode only).';
+      console.warn('[sagedesk] indexUrl is required. Run `npx sagedesk build` and pass indexUrl.');
+      return;
+    }
     try {
       this._index = await fetchIndex(this._config.indexUrl);
     } catch {
