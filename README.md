@@ -6,7 +6,7 @@
 
 <br/>
 
-<p align="center"><a href="https://www.npmjs.com/package/sagedesk"><img src="https://img.shields.io/npm/v/sagedesk?color=0ea5e9&label=npm" alt="npm version" /></a> <a href="https://bundlephobia.com/package/sagedesk"><img src="https://img.shields.io/bundlephobia/minzip/sagedesk?color=22c55e&label=gzipped" alt="bundle size" /></a> <a href="./LICENSE"><img src="https://img.shields.io/npm/l/sagedesk?color=a855f7" alt="license" /></a> <a href="https://github.com/mzeeshanwahid/sagedesk/actions"><img src="https://img.shields.io/github/actions/workflow/status/mzeeshanwahid/sagedesk/ci.yml?label=tests" alt="tests" /></a> <a href="./package.json"><img src="https://img.shields.io/badge/dependencies-zero-f97316" alt="zero dependencies" /></a> <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.x-3178c6" alt="TypeScript" /></a></p>
+<p align="center"><a href="https://www.npmjs.com/package/sagedesk"><img src="https://img.shields.io/npm/v/sagedesk?color=0ea5e9&label=npm" alt="npm version" /></a> <a href="./LICENSE"><img src="https://img.shields.io/npm/l/sagedesk?color=a855f7" alt="license" /></a> <a href="https://github.com/mzeeshanwahid/sagedesk/actions"><img src="https://img.shields.io/github/actions/workflow/status/mzeeshanwahid/sagedesk/ci.yml?label=tests" alt="tests" /></a> <a href="./package.json"><img src="https://img.shields.io/badge/dependencies-zero-f97316" alt="zero dependencies" /></a> <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.x-3178c6" alt="TypeScript" /></a></p>
 
 ---
 
