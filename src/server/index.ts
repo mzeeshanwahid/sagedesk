@@ -234,10 +234,8 @@ function parseBody(body: QueryRequestBody): { query: string; vector: Float32Arra
   if (!Array.isArray(raw) || raw.length === 0) {
     return { error: 'Missing queryVector' };
   }
-  for (let i = 0; i < raw.length; i++) {
-    if (typeof raw[i] !== 'number' || !Number.isFinite(raw[i])) {
-      return { error: 'Invalid queryVector' };
-    }
+  if (!raw.every(v => typeof v === 'number' && Number.isFinite(v))) {
+    return { error: 'Invalid queryVector' };
   }
   return { query, vector: new Float32Array(raw) };
 }

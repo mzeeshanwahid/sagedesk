@@ -3,6 +3,7 @@ import React, {
   useRef,
   useEffect,
   useCallback,
+  useMemo,
   CSSProperties,
 } from 'react';
 import { createPortal } from 'react-dom';
@@ -185,9 +186,9 @@ const PoweredBy = ({ dark = false }: { dark?: boolean }) => (
 
 // ─── Classic theme components ─────────────────────────────────────────────────
 
-function ClassicMessageBubble({ msg, accent }: { msg: ChatMessage; accent: string }) {
+const ClassicMessageBubble = React.memo(function ClassicMessageBubble({ msg, accent }: { msg: ChatMessage; accent: string }) {
   const isBot = msg.role === 'bot';
-  const renderedHtml = isBot ? parseMarkdown(msg.text) : msg.text;
+  const renderedHtml = useMemo(() => isBot ? parseMarkdown(msg.text) : msg.text, [isBot, msg.text]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: isBot ? 'flex-start' : 'flex-end', gap: '4px' }}>
@@ -224,7 +225,7 @@ function ClassicMessageBubble({ msg, accent }: { msg: ChatMessage; accent: strin
       }}>just now</span>
     </div>
   );
-}
+});
 
 function ClassicTypingIndicator() {
   const dot: CSSProperties = { width: 6, height: 6, borderRadius: '50%', background: '#c8c8ce', display: 'inline-block' };
@@ -246,9 +247,9 @@ function ClassicTypingIndicator() {
 
 // ─── Light theme components ───────────────────────────────────────────────────
 
-function LightMessageBubble({ msg, accent, agentName }: { msg: ChatMessage; accent: string; agentName: string }) {
+const LightMessageBubble = React.memo(function LightMessageBubble({ msg, accent, agentName }: { msg: ChatMessage; accent: string; agentName: string }) {
   const isBot = msg.role === 'bot';
-  const renderedHtml = isBot ? parseMarkdown(msg.text) : msg.text;
+  const renderedHtml = useMemo(() => isBot ? parseMarkdown(msg.text) : msg.text, [isBot, msg.text]);
 
   if (isBot) {
     return (
@@ -287,7 +288,7 @@ function LightMessageBubble({ msg, accent, agentName }: { msg: ChatMessage; acce
       </div>
     </div>
   );
-}
+});
 
 function LightTypingIndicator({ accent }: { accent: string }) {
   const dot: CSSProperties = { width: 6, height: 6, borderRadius: '50%', background: '#c4c4be', display: 'inline-block' };
@@ -314,9 +315,9 @@ function LightTypingIndicator({ accent }: { accent: string }) {
 
 // ─── Dark theme components ────────────────────────────────────────────────────
 
-function DarkMessageBubble({ msg, accent }: { msg: ChatMessage; accent: string }) {
+const DarkMessageBubble = React.memo(function DarkMessageBubble({ msg, accent }: { msg: ChatMessage; accent: string }) {
   const isBot = msg.role === 'bot';
-  const renderedHtml = isBot ? parseMarkdown(msg.text) : msg.text;
+  const renderedHtml = useMemo(() => isBot ? parseMarkdown(msg.text) : msg.text, [isBot, msg.text]);
 
   return (
     <div style={{
@@ -347,7 +348,7 @@ function DarkMessageBubble({ msg, accent }: { msg: ChatMessage; accent: string }
       )}
     </div>
   );
-}
+});
 
 function DarkTypingIndicator() {
   const dot: CSSProperties = { width: 6, height: 6, borderRadius: '50%', background: 'rgba(255,255,255,0.4)', display: 'inline-block' };
@@ -391,7 +392,7 @@ interface ThemeRenderProps {
   submit: (text: string) => void;
 }
 
-function renderClassic(p: ThemeRenderProps) {
+function ClassicTheme(p: ThemeRenderProps) {
   const {
     agent, state, chips, accent, isLeft, inputValue, setInputValue,
     handleClose, handleSubmit, handleKeyDown, isClosing, panelClass,
@@ -529,7 +530,7 @@ function renderClassic(p: ThemeRenderProps) {
   );
 }
 
-function renderLight(p: ThemeRenderProps) {
+function LightTheme(p: ThemeRenderProps) {
   const {
     agent, state, chips, accent, isLeft, inputValue, setInputValue,
     handleClose, handleSubmit, handleKeyDown, isClosing, panelClass,
@@ -667,7 +668,7 @@ function renderLight(p: ThemeRenderProps) {
   );
 }
 
-function renderDark(p: ThemeRenderProps) {
+function DarkTheme(p: ThemeRenderProps) {
   const {
     agent, state, chips, accent, isLeft, inputValue, setInputValue,
     handleClose, handleSubmit, handleKeyDown, isClosing, panelClass,
@@ -871,7 +872,10 @@ export function SageDeskWidget({ mode, indexUrl, endpoint, agent, search }: Sage
     );
   }
 
-  const config: SageDeskConfig = { mode: resolvedMode, indexUrl, endpoint, agent, search };
+  const config = useMemo<SageDeskConfig>(
+    () => ({ mode: resolvedMode, indexUrl, endpoint, agent, search }),
+    [resolvedMode, indexUrl, endpoint, agent, search]
+  );
   const { state, chips, open, close, submit } = useSageDesk(config);
 
   const theme = agent.theme ?? 'classic';
@@ -949,9 +953,9 @@ export function SageDeskWidget({ mode, indexUrl, endpoint, agent, search }: Sage
   };
 
   const content =
-    theme === 'dark' ? renderDark(props) :
-      theme === 'light' ? renderLight(props) :
-        renderClassic(props);
+    theme === 'dark' ? <DarkTheme {...props} /> :
+      theme === 'light' ? <LightTheme {...props} /> :
+        <ClassicTheme {...props} />;
 
   return createPortal(content, document.body);
 }

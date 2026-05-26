@@ -30,6 +30,7 @@ function logFallbackWarning(reason?: string): void {
 
 interface State {
   messages: ChatMessage[];
+  userMessages: ChatMessage[];
   isOpen: boolean;
   isTyping: boolean;
   engineStatus: EngineStatus;
@@ -47,6 +48,7 @@ type Action =
 
 const initialState: State = {
   messages: [],
+  userMessages: [],
   isOpen: false,
   isTyping: false,
   engineStatus: 'idle',
@@ -60,8 +62,13 @@ function reducer(state: State, action: Action): State {
       return { ...state, isOpen: true };
     case 'CLOSE':
       return { ...state, isOpen: false };
-    case 'ADD_MESSAGE':
-      return { ...state, messages: [...state.messages, action.payload] };
+    case 'ADD_MESSAGE': {
+      const newMessages = [...state.messages, action.payload];
+      const newUserMessages = action.payload.role === 'user'
+        ? [...state.userMessages, action.payload]
+        : state.userMessages;
+      return { ...state, messages: newMessages, userMessages: newUserMessages };
+    }
     case 'SET_TYPING':
       return { ...state, isTyping: action.payload };
     case 'SET_ENGINE_STATUS':
@@ -90,8 +97,7 @@ export interface UseSageDeskReturn {
 export function useSageDesk(config: SageDeskConfig): UseSageDeskReturn {
   const [state, dispatch] = useReducer(reducer, initialState);
 
-  // Mirror engineStatus in a ref so polling loops always read the current
-  // value without capturing a stale closure.
+  // Mirror engineStatus in a ref so async functions always read the current value.
   const engineStatusRef = useRef<EngineStatus>('idle');
   engineStatusRef.current = state.engineStatus;
 
@@ -99,6 +105,7 @@ export function useSageDesk(config: SageDeskConfig): UseSageDeskReturn {
   const embedderRef = useRef<EmbedderRuntime | null>(null);
   const engineStartedRef = useRef(false);
   const msgCounterRef = useRef(0);
+  const engineReadyCallbacksRef = useRef<Array<() => void>>([]);
   const [chips, setChips] = useState<string[]>([]);
 
   const makeId = () => `msg-${++msgCounterRef.current}`;
@@ -112,6 +119,12 @@ export function useSageDesk(config: SageDeskConfig): UseSageDeskReturn {
     },
     []
   );
+
+  const notifyEngineReady = useCallback(() => {
+    const callbacks = engineReadyCallbacksRef.current;
+    engineReadyCallbacksRef.current = [];
+    callbacks.forEach(cb => cb());
+  }, []);
 
   // Start engine once when widget first opens
   const startEngine = useCallback(async () => {
@@ -129,9 +142,11 @@ export function useSageDesk(config: SageDeskConfig): UseSageDeskReturn {
         embedderRef.current = new EmbedderRuntime();
         await embedderRef.current.load(config.agent.model);
         dispatch({ type: 'SET_ENGINE_STATUS', payload: { status: 'ready' } });
+        notifyEngineReady();
       } catch (err) {
         console.warn('[sagedesk] WASM embedder failed to load - LLM mode will use fallback messages.', err);
         dispatch({ type: 'SET_ENGINE_STATUS', payload: { status: 'error-model', error: String(err) } });
+        notifyEngineReady();
       }
       return;
     }
@@ -146,6 +161,7 @@ export function useSageDesk(config: SageDeskConfig): UseSageDeskReturn {
         type: 'SET_ENGINE_STATUS',
         payload: { status: 'error-index', error: String(err) },
       });
+      notifyEngineReady();
       addMessage({
         role: 'bot',
         text: "I'm having trouble loading right now. Please try again in a moment.",
@@ -161,12 +177,14 @@ export function useSageDesk(config: SageDeskConfig): UseSageDeskReturn {
       embedderRef.current = new EmbedderRuntime();
       await embedderRef.current.load(config.agent.model);
       dispatch({ type: 'SET_ENGINE_STATUS', payload: { status: 'ready' } });
+      notifyEngineReady();
     } catch (err) {
       console.warn('[sagedesk] WASM model failed to load, falling back to keyword search -', err);
       embedderRef.current = new EmbedderRuntime();
       dispatch({ type: 'SET_ENGINE_STATUS', payload: { status: 'degraded' } });
+      notifyEngineReady();
     }
-  }, [config.mode, config.indexUrl, config.agent.model, config.agent.suggestedChips, addMessage]);
+  }, [config.mode, config.indexUrl, config.agent.model, config.agent.suggestedChips, addMessage, notifyEngineReady]);
 
   const greetingShownRef = useRef(false);
 
@@ -188,24 +206,13 @@ export function useSageDesk(config: SageDeskConfig): UseSageDeskReturn {
     dispatch({ type: 'CLOSE' });
   }, []);
 
-  // Uses engineStatusRef so the polling check always reads the live value,
-  // not the stale closure value captured when waitForEngine was first called.
   const waitForEngine = useCallback((): Promise<void> => {
-    return new Promise((resolve) => {
-      const check = () => {
-        const s = engineStatusRef.current;
-        if (
-          s === 'ready' ||
-          s === 'degraded' ||
-          s === 'error-index' ||
-          s === 'error-model'
-        ) {
-          resolve();
-        } else {
-          setTimeout(check, 100);
-        }
-      };
-      check();
+    const s = engineStatusRef.current;
+    if (s === 'ready' || s === 'degraded' || s === 'error-index' || s === 'error-model') {
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+      engineReadyCallbacksRef.current.push(resolve);
     });
   }, []);
 
@@ -306,8 +313,8 @@ export function useSageDesk(config: SageDeskConfig): UseSageDeskReturn {
       // In local mode apply an artificial "thinking" pause for a more natural feel.
       if (config.mode !== 'llm') {
         const elapsed = Date.now() - typingStart;
-        const delayBase = (retrievalMode === 'keyword' || isFallback) ? 800 : 3000;
-        const minTypingMs = delayBase + Math.random() * 2000;
+        const delayBase = (retrievalMode === 'keyword' || isFallback) ? 400 : 800;
+        const minTypingMs = delayBase + Math.random() * 400;
         const remaining = minTypingMs - elapsed;
         if (remaining > 0) await new Promise((r) => setTimeout(r, remaining));
       }
@@ -329,13 +336,9 @@ export function useSageDesk(config: SageDeskConfig): UseSageDeskReturn {
   }, [state.isOpen, close]);
 
   const activeChips = useMemo(() => {
-    const askedTexts = new Set(
-      state.messages
-        .filter((m) => m.role === 'user')
-        .map((m) => m.text.toLowerCase().trim())
-    );
+    const askedTexts = new Set(state.userMessages.map((m) => m.text.toLowerCase().trim()));
     return chips.filter((chip) => !askedTexts.has(chip.toLowerCase().trim()));
-  }, [chips, state.messages]);
+  }, [chips, state.userMessages]);
 
   return { state, chips: activeChips, open, close, submit };
 }

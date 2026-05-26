@@ -40,6 +40,15 @@ Because the embedder stays in the browser, the server function carries no native
 
 ---
 
+## Framework Support
+
+| | Supported |
+|---|---|
+| **Frontend** | Vanilla HTML/JS, React, Next.js (App Router) |
+| **Backend** (LLM Mode) | Next.js API Routes, Express, any Node.js server, Vercel, AWS Lambda |
+
+---
+
 ## Installation
 
 ```bash
@@ -326,40 +335,9 @@ sagedesk includes built-in resilience for LLM mode. If the LLM provider fails-wh
 
 2. **Automatic Fallback** - When an LLM request fails, the server returns the best matching knowledge chunks without synthesis. Visitors still get relevant, grounded information.
 
-3. **Developer Transparency** - The browser console logs meaningful warnings for debugging:
-   - `"[sagedesk] Support service authentication failed. Showing relevant knowledge instead."` - Invalid or expired API key
-   - `"[sagedesk] Support service quota exhausted. Showing relevant knowledge instead."` - Rate limit hit
-   - `"[sagedesk] Support service took too long to respond. Showing relevant knowledge instead."` - Timeout
-   - `"[sagedesk] Support service error. Showing relevant knowledge instead."` - Generic API error
-   - `"[sagedesk] Support service returned invalid response. Showing relevant knowledge instead."` - Malformed response
+3. **Developer Transparency** - The browser console logs a `[sagedesk]` warning for each failure class: auth error, quota exhausted, timeout, generic API error, and malformed response. Each message describes the cause and notes that the fallback was triggered.
 
 4. **User Experience** - Visitors always see a fallback message (configured via `agent.fallback` or `agent.fallbackPool`) alongside relevant knowledge chunks. No errors are exposed to users.
-
-### Configuring Timeout
-
-Adjust the LLM request timeout based on your provider's typical response time:
-
-```ts
-// Next.js
-export const POST = createSageDeskHandler({
-  indexPath: './public/support-index.json',
-  provider: 'deepseek',
-  apiKey: process.env.SAGEDESK_LLM_API_KEY!,
-  model: 'deepseek-chat',
-  llmTimeoutMs: 8000,  // 8 seconds
-});
-```
-
-```ts
-// Express
-app.use('/api/sagedesk', createSageDeskMiddleware({
-  indexPath: './public/support-index.json',
-  provider: 'openai',
-  apiKey: process.env.SAGEDESK_LLM_API_KEY!,
-  model: 'gpt-4o-mini',
-  llmTimeoutMs: 10000,  // 10 seconds
-}));
-```
 
 ---
 
