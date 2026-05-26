@@ -1,6 +1,6 @@
 {
   "name": "sagedesk",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "RAG-powered support widget for any website. Local mode: in-browser search with no API key. LLM mode: synthesized answers via your own backend.",
   "type": "module",
   "author": {
