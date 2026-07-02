@@ -17,8 +17,11 @@ vi.mock('../../src/core/renderer.js', () => ({
   buildAnswer: vi.fn(),
 }));
 
-// A 384-dim vector built once and reused - matches the model's output dimensions.
-const FAKE_QUERY_VECTOR = Array.from({ length: 384 }, (_, i) => (i % 2 === 0 ? 0.01 : -0.01));
+// A 384-dim unit vector built once and reused. The real embedder emits
+// L2-normalized vectors (normalize: true), and the server now rejects non-unit
+// vectors, so the fixture must be normalized too: |v| = 1.
+const UNIT_COMPONENT = 1 / Math.sqrt(384);
+const FAKE_QUERY_VECTOR = Array.from({ length: 384 }, (_, i) => (i % 2 === 0 ? UNIT_COMPONENT : -UNIT_COMPONENT));
 
 function bodyWithVector(query: string): string {
   return JSON.stringify({ query, queryVector: FAKE_QUERY_VECTOR });
@@ -144,6 +147,102 @@ describe('server/index.ts', () => {
       expect(response.status).toBe(400);
       const data = (await response.json()) as { error?: string };
       expect(data.error).toBe('Invalid queryVector');
+    });
+
+    it('should return 400 when queryVector is not unit-normalized', async () => {
+      const { createSageDeskHandler } = await import(
+        '../../src/server/index.js'
+      );
+
+      const handler = createSageDeskHandler({
+        indexPath: './test-index.json',
+        provider: 'openai',
+        apiKey: 'test-key',
+        model: 'gpt-4o-mini',
+      });
+
+      // A crafted, magnitude-inflated vector that would otherwise force matches.
+      const inflated = Array.from({ length: 384 }, () => 1);
+      const request = new Request('http://localhost/api/sagedesk', {
+        method: 'POST',
+        body: JSON.stringify({ query: 'hello', queryVector: inflated }),
+      });
+
+      const response = await handler(request);
+      expect(response.status).toBe(400);
+      const data = (await response.json()) as { error?: string };
+      expect(data.error).toBe('Invalid queryVector');
+    });
+
+    it('should return 400 when query exceeds the max length', async () => {
+      const { createSageDeskHandler } = await import(
+        '../../src/server/index.js'
+      );
+
+      const handler = createSageDeskHandler({
+        indexPath: './test-index.json',
+        provider: 'openai',
+        apiKey: 'test-key',
+        model: 'gpt-4o-mini',
+      });
+
+      const request = new Request('http://localhost/api/sagedesk', {
+        method: 'POST',
+        body: JSON.stringify({ query: 'a'.repeat(2001), queryVector: FAKE_QUERY_VECTOR }),
+      });
+
+      const response = await handler(request);
+      expect(response.status).toBe(400);
+      const data = (await response.json()) as { error?: string };
+      expect(data.error).toBe('Query too long');
+    });
+
+    it('should return 403 when Origin is not in the allowlist', async () => {
+      const { createSageDeskHandler } = await import(
+        '../../src/server/index.js'
+      );
+
+      const handler = createSageDeskHandler({
+        indexPath: './test-index.json',
+        provider: 'openai',
+        apiKey: 'test-key',
+        model: 'gpt-4o-mini',
+        allowedOrigins: ['https://example.com'],
+      });
+
+      const request = new Request('http://localhost/api/sagedesk', {
+        method: 'POST',
+        headers: { Origin: 'https://evil.com' },
+        body: bodyWithVector('hello'),
+      });
+
+      const response = await handler(request);
+      expect(response.status).toBe(403);
+    });
+
+    it('should not return 403 when Origin is in the allowlist', async () => {
+      const { createSageDeskHandler } = await import(
+        '../../src/server/index.js'
+      );
+
+      const handler = createSageDeskHandler({
+        indexPath: './test-index.json',
+        provider: 'openai',
+        apiKey: 'test-key',
+        model: 'gpt-4o-mini',
+        allowedOrigins: ['https://example.com'],
+      });
+
+      const request = new Request('http://localhost/api/sagedesk', {
+        method: 'POST',
+        headers: { Origin: 'https://example.com' },
+        body: bodyWithVector('hello'),
+      });
+
+      // Passes the origin gate; downstream fails on index read, but never 403/400.
+      const response = await handler(request);
+      expect(response.status).not.toBe(403);
+      expect(response.status).not.toBe(400);
     });
 
     it('should handle handler errors and return fallback with 500 status', async () => {

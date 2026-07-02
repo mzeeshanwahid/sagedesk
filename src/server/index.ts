@@ -22,12 +22,31 @@ export interface SageDeskHandlerConfig {
   systemPrompt?: string;
   /** Timeout for LLM API calls in milliseconds. Defaults to 5000 (5 seconds). */
   llmTimeoutMs?: number;
+  /**
+   * Optional allowlist of request origins (e.g. ['https://example.com']). When
+   * set, requests whose Origin (or Referer) doesn't match an entry are rejected
+   * with 403. The widget runs on the consumer's own site, so legitimate requests
+   * carry a known origin. Non-browser clients can spoof these headers, so treat
+   * this as defense-in-depth, not authentication.
+   */
+  allowedOrigins?: string[];
 }
 
 interface QueryRequestBody {
   query?: string;
   queryVector?: number[];
 }
+
+// Reject absurdly long queries before they inflate LLM input-token cost.
+const MAX_QUERY_LENGTH = 2000;
+
+// Shown when the query vector's length doesn't match the index. This almost
+// always means the embedding model differs between build time and runtime.
+const DIMENSION_MISMATCH_MESSAGE =
+  'Query vector size does not match the knowledge index. The same embedding ' +
+  'model must be used at build time and at runtime. Rebuild the index with the ' +
+  'model your widget is configured to use (agent.model), or set agent.model to ' +
+  'match the model the index was built with.';
 
 // ─── Provider URL map ─────────────────────────────────────────────────────────
 
@@ -67,6 +86,13 @@ function loadIndexFile(indexPath: string): IndexChunk[] {
 
   indexCache.set(indexPath, chunks);
   return chunks;
+}
+
+/** Returns the vector dimension of the index (e.g. 384), or undefined if empty. */
+function getIndexDim(indexPath: string): number | undefined {
+  const index = loadIndexFile(indexPath);
+  const v = index[0]?.vector384;
+  return v ? (v as Float32Array).length : undefined;
 }
 
 // ─── Helper: Classify error for client-side logging ───────────────────────────
@@ -225,19 +251,66 @@ async function handleQuery(
  * Parse and validate {query, queryVector} from a request body. Returns either a
  * usable Float32Array (and the query string) or a string error code suitable
  * for a 400 response.
+ *
+ * Vectors are required to be (approximately) L2-normalized: the real client
+ * always sends unit vectors, and rejecting non-unit vectors defeats crafted
+ * payloads that inflate magnitude to force matches past minScore and trigger
+ * needless LLM calls. Dimension is checked separately by the handler (it needs
+ * the loaded index), so structural validation here never touches the filesystem.
  */
-function parseBody(body: QueryRequestBody): { query: string; vector: Float32Array } | { error: string } {
+function parseBody(
+  body: QueryRequestBody
+): { query: string; vector: Float32Array } | { error: string } {
   const query = body.query?.trim();
   if (!query) return { error: 'Missing query' };
+  if (query.length > MAX_QUERY_LENGTH) return { error: 'Query too long' };
 
   const raw = body.queryVector;
   if (!Array.isArray(raw) || raw.length === 0) {
     return { error: 'Missing queryVector' };
   }
-  if (!raw.every(v => typeof v === 'number' && Number.isFinite(v))) {
+
+  // Validate every component is finite and accumulate the L2 norm in one pass.
+  let sumSq = 0;
+  for (let i = 0; i < raw.length; i++) {
+    const v = raw[i];
+    if (typeof v !== 'number' || !Number.isFinite(v)) {
+      return { error: 'Invalid queryVector' };
+    }
+    sumSq += v * v;
+  }
+  const norm = Math.sqrt(sumSq);
+  if (norm < 0.99 || norm > 1.01) {
     return { error: 'Invalid queryVector' };
   }
+
   return { query, vector: new Float32Array(raw) };
+}
+
+// ─── Origin allowlist ─────────────────────────────────────────────────────────
+
+function originOf(url: string): string | undefined {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * When `allowedOrigins` is configured, the request's Origin (or, failing that,
+ * the origin parsed from its Referer) must exactly match an allowed entry.
+ * Returns true when no allowlist is configured, since the feature is opt-in.
+ */
+function isOriginAllowed(
+  allowedOrigins: string[] | undefined,
+  origin: string | null | undefined,
+  referer: string | null | undefined
+): boolean {
+  if (!allowedOrigins || allowedOrigins.length === 0) return true;
+  const candidate = origin || (referer ? originOf(referer) : undefined);
+  if (!candidate) return false;
+  return allowedOrigins.includes(candidate);
 }
 
 // ─── Next.js App Router handler ───────────────────────────────────────────────
@@ -263,11 +336,20 @@ function parseBody(body: QueryRequestBody): { query: string; vector: Float32Arra
 export function createSageDeskHandler(config: SageDeskHandlerConfig) {
   return async function POST(request: Request): Promise<Response> {
     try {
+      if (!isOriginAllowed(config.allowedOrigins, request.headers.get('origin'), request.headers.get('referer'))) {
+        return Response.json({ error: 'Forbidden' }, { status: 403 });
+      }
+
       const body = (await request.json()) as QueryRequestBody;
       const parsed = parseBody(body);
 
       if ('error' in parsed) {
         return Response.json({ error: parsed.error }, { status: 400 });
+      }
+
+      const dim = getIndexDim(config.indexPath);
+      if (dim !== undefined && parsed.vector.length !== dim) {
+        return Response.json({ error: DIMENSION_MISMATCH_MESSAGE }, { status: 400 });
       }
 
       const result = await handleQuery(parsed.query, parsed.vector, config);
@@ -283,6 +365,7 @@ export function createSageDeskHandler(config: SageDeskHandlerConfig) {
 
 type ExpressRequest = {
   body: QueryRequestBody;
+  headers?: Record<string, string | string[] | undefined>;
 };
 type ExpressResponse = {
   status: (code: number) => ExpressResponse;
@@ -313,10 +396,27 @@ export function createSageDeskMiddleware(config: SageDeskHandlerConfig) {
     next: NextFunction
   ): Promise<void> {
     try {
+      const origin = req.headers?.origin;
+      const referer = req.headers?.referer;
+      if (!isOriginAllowed(
+        config.allowedOrigins,
+        typeof origin === 'string' ? origin : undefined,
+        typeof referer === 'string' ? referer : undefined
+      )) {
+        res.status(403).json({ error: 'Forbidden' });
+        return;
+      }
+
       const parsed = parseBody(req.body ?? {});
 
       if ('error' in parsed) {
         res.status(400).json({ error: parsed.error });
+        return;
+      }
+
+      const dim = getIndexDim(config.indexPath);
+      if (dim !== undefined && parsed.vector.length !== dim) {
+        res.status(400).json({ error: DIMENSION_MISMATCH_MESSAGE });
         return;
       }
 

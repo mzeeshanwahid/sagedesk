@@ -322,6 +322,7 @@ createSageDeskHandler({
 | `minScore` | `number` | no | Minimum similarity score for a chunk. Defaults to `0.42`. |
 | `systemPrompt` | `string` | no | Override the default system prompt sent to the LLM. |
 | `llmTimeoutMs` | `number` | no | Timeout for LLM API calls in milliseconds. Defaults to `5000` (5 seconds). |
+| `allowedOrigins` | `string[]` | no | Allowlist of request origins (e.g. `['https://yoursite.com']`). When set, requests whose `Origin`/`Referer` doesn't match are rejected with `403`. Defense-in-depth, not authentication. See [Security](#security-llm-mode). |
 
 ---
 
@@ -338,6 +339,48 @@ sagedesk includes built-in resilience for LLM mode. If the LLM provider fails-wh
 3. **Developer Transparency** - The browser console logs a `[sagedesk]` warning for each failure class: auth error, quota exhausted, timeout, generic API error, and malformed response. Each message describes the cause and notes that the fallback was triggered.
 
 4. **User Experience** - Visitors always see a fallback message (configured via `agent.fallback` or `agent.fallbackPool`) alongside relevant knowledge chunks. No errors are exposed to users.
+
+---
+
+## Security (LLM Mode)
+
+Your endpoint is a public route that proxies a paid LLM, so treat it like any other public API. sagedesk hardens the handler and gives you controls; you own the deployment-level protections.
+
+### Built-in request validation
+
+Every request is validated before it reaches your LLM:
+
+- **Vector integrity** - the query vector must be finite and L2-normalized (unit length). The real widget always sends normalized vectors, so this rejects crafted vectors that try to inflate similarity scores to force matches and burn LLM calls.
+- **Dimension match** - the vector length must match your index. A mismatch returns a clear `400` explaining that the build-time and runtime embedding models must be the same.
+- **Query length cap** - queries over 2,000 characters are rejected to bound LLM input-token cost.
+
+### Origin allowlist
+
+The widget runs on your own site, so you can restrict the endpoint to your origins with `allowedOrigins`:
+
+```ts
+createSageDeskHandler({
+  indexPath: resolve(process.cwd(), 'public', 'sagedesk-index.json'),
+  provider: 'openai',
+  apiKey: process.env.SAGEDESK_LLM_API_KEY!,
+  model: 'gpt-4o-mini',
+  allowedOrigins: ['https://yoursite.com'],
+});
+```
+
+Requests whose `Origin` (or, failing that, `Referer`) doesn't match an allowed entry get a `403`. Leaving `allowedOrigins` unset disables the check (default). Because non-browser clients can spoof these headers, treat this as defense-in-depth, not authentication.
+
+### Rate limiting (recommended)
+
+sagedesk does **not** rate-limit for you, and a determined caller can still script valid-looking requests against your endpoint to drive up your LLM bill. For any public deployment, add rate limiting at the platform layer:
+
+| Platform | Recommended approach |
+|---|---|
+| **Vercel** | Vercel Firewall / Edge Middleware, or `@upstash/ratelimit` backed by Vercel KV. |
+| **AWS** | API Gateway throttling, or AWS WAF rate-based rules. |
+| **Express / self-hosted** | `express-rate-limit`, or a reverse proxy (e.g. nginx `limit_req`). |
+
+Pair rate limiting with a sensible `llmTimeoutMs` and consider lowering `topK` to cap the cost of any single request.
 
 ---
 
@@ -402,7 +445,7 @@ sagedesk defaults to `all-MiniLM-L6-v2` (~22MB), which offers an excellent balan
 | `paraphrase-multilingual-MiniLM-L12-v2` | 384 | ~45 MB | 50+ languages. |
 | `all-mpnet-base-v2` | 768 | ~85 MB | Maximum semantic quality. |
 
-> **Note:** The `--model` flag in `npx sagedesk build` must match the `agent.model` prop on the widget. Both local mode and LLM mode embed in the browser using `agent.model`, and the resulting vectors must live in the same space as the index built by the CLI.
+> **Important:** The `--model` flag in `npx sagedesk build` must match the `agent.model` prop on the widget. Both local mode and LLM mode embed in the browser using `agent.model`, and the resulting vectors must live in the same space as the index built by the CLI. **Mixing models across build time and runtime is not supported** - different models produce different-sized, non-comparable vectors (e.g. `all-mpnet-base-v2` is 768-dim while the others are 384-dim). In LLM mode a mismatch is caught on the server and returns a clear `400` telling you to align the models; in local mode, search simply fails to find matches. Whenever you change the model, rebuild the index **and** update `agent.model` together.
 
 ---
 
