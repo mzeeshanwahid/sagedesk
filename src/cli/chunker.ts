@@ -1,4 +1,5 @@
-import type { KnowledgeEntry, KnowledgeFile } from '../core/types';
+import type { KnowledgeFile } from '../core/types';
+import { validateEntry } from '../core/knowledge';
 
 export interface RawChunk {
   id: string;
@@ -72,16 +73,4 @@ export function chunkKnowledge(knowledgeFile: KnowledgeFile): RawChunk[] {
   }
 
   return chunks;
-}
-
-function validateEntry(entry: KnowledgeEntry): void {
-  if (!entry.id || typeof entry.id !== 'string') {
-    throw new Error(`Knowledge entry missing required field "id": ${JSON.stringify(entry)}`);
-  }
-  if (!entry.answer || typeof entry.answer !== 'string') {
-    throw new Error(`Knowledge entry "${entry.id}" missing required field "answer"`);
-  }
-  if (entry.queries !== undefined && !Array.isArray(entry.queries)) {
-    throw new Error(`Knowledge entry "${entry.id}": "queries" must be an array of strings`);
-  }
 }

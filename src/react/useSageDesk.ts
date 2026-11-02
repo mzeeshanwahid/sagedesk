@@ -131,9 +131,18 @@ export function useSageDesk(config: SageDeskConfig): UseSageDeskReturn {
     if (engineStartedRef.current) return;
     engineStartedRef.current = true;
 
-    // LLM mode: skip the local index, but still load the WASM embedder so the
-    // browser can vectorize queries before POSTing them. This keeps the server
-    // free of native ONNX bindings (and of Vercel's 300MB function limit).
+    // LLM mode: no local index and, by default, no embedder. The widget posts
+    // the query text and the server chooses what the LLM sees, so nothing is
+    // downloaded and the widget is usable the moment it opens.
+    if (config.mode === 'llm' && !config.llm?.embedQuery) {
+      setChips(config.agent.suggestedChips ?? []);
+      dispatch({ type: 'SET_ENGINE_STATUS', payload: { status: 'ready' } });
+      notifyEngineReady();
+      return;
+    }
+
+    // LLM mode with llm.embedQuery (deprecated, 2.x flow): load the WASM
+    // embedder so the browser can vectorize queries for a vector-retrieval server.
     if (config.mode === 'llm') {
       setChips(config.agent.suggestedChips ?? []);
       dispatch({ type: 'SET_ENGINE_STATUS', payload: { status: 'loading-model' } });
@@ -184,7 +193,7 @@ export function useSageDesk(config: SageDeskConfig): UseSageDeskReturn {
       dispatch({ type: 'SET_ENGINE_STATUS', payload: { status: 'degraded' } });
       notifyEngineReady();
     }
-  }, [config.mode, config.indexUrl, config.agent.model, config.agent.suggestedChips, addMessage, notifyEngineReady]);
+  }, [config.mode, config.llm?.embedQuery, config.indexUrl, config.agent.model, config.agent.suggestedChips, addMessage, notifyEngineReady]);
 
   const greetingShownRef = useRef(false);
 
@@ -243,26 +252,28 @@ export function useSageDesk(config: SageDeskConfig): UseSageDeskReturn {
       let retrievalMode: 'vector' | 'keyword' = 'keyword';
 
       if (config.mode === 'llm') {
-        // LLM mode: embed the query in the browser, then POST {query, queryVector}
-        // to the consumer's backend. The server does retrieval + LLM synthesis only.
+        // LLM mode: POST {query} to the consumer's backend, which picks the
+        // knowledge and calls the LLM. With llm.embedQuery (deprecated) the
+        // query is also embedded in the browser and sent as queryVector.
+        const embedQuery = config.llm?.embedQuery === true;
         if (!config.endpoint) {
           console.warn('[sagedesk] LLM mode requires an "endpoint" prop.');
           botText = getFallback(config.agent);
           isFallback = true;
-        } else if (!embedderRef.current?.isReady) {
+        } else if (embedQuery && !embedderRef.current?.isReady) {
           console.warn('[sagedesk] Embedder not ready - showing fallback.');
           botText = getFallback(config.agent);
           isFallback = true;
         } else {
           try {
-            const vector = await embedderRef.current.embed(trimmed);
+            const payload: { query: string; queryVector?: number[] } = { query: trimmed };
+            if (embedQuery) {
+              payload.queryVector = Array.from(await embedderRef.current!.embed(trimmed));
+            }
             const res = await fetch(config.endpoint, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                query: trimmed,
-                queryVector: Array.from(vector),
-              }),
+              body: JSON.stringify(payload),
             });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = (await res.json()) as {
@@ -322,7 +333,7 @@ export function useSageDesk(config: SageDeskConfig): UseSageDeskReturn {
       dispatch({ type: 'SET_TYPING', payload: false });
       addMessage({ role: 'bot', text: botText, isFallback });
     },
-    [addMessage, waitForEngine, config.agent, config.search]
+    [addMessage, waitForEngine, config.mode, config.endpoint, config.llm?.embedQuery, config.agent, config.search]
   );
 
   // Keyboard: Escape closes

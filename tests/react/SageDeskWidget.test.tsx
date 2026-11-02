@@ -109,4 +109,18 @@ describe('SageDeskWidget React', () => {
     expect(mockUseSageDesk.close).toHaveBeenCalled();
     vi.useRealTimers();
   });
+
+  it('passes the llm option through to useSageDesk', () => {
+    render(
+      <SageDeskWidget
+        mode="llm"
+        endpoint="/api/sagedesk"
+        llm={{ embedQuery: true }}
+        agent={config.agent}
+      />
+    );
+    expect(useSageDeskModule.useSageDesk).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'llm', endpoint: '/api/sagedesk', llm: { embedQuery: true } })
+    );
+  });
 });

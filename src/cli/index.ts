@@ -154,6 +154,7 @@ export async function buildAction(options: {
       `  ${rawChunks.length} chunks from ${knowledgeFile.knowledge.length} entries | model: ${modelName} | minScore default: ${minScore}`
     )
   );
+  console.log(chalk.dim('  LLM mode with `knowledgePath` does not need this index.'));
   console.log('');
 }
 

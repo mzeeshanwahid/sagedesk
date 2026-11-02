@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as retriever from '../../src/core/retriever';
 import * as renderer from '../../src/core/renderer';
 import * as fallback from '../../src/core/fallback';
+import { EmbedderRuntime } from '../../src/core/embedder';
 
 vi.mock('../../src/core/retriever', () => ({
   fetchIndex: vi.fn(),
@@ -128,5 +129,104 @@ describe('useSageDesk', () => {
 
     expect(result.current.chips).toHaveLength(1);
     expect(result.current.chips[0]).toBe('Chip 2');
+  });
+
+  it('local mode still loads the embedder and fetches the index', async () => {
+    vi.mocked(retriever.fetchIndex).mockResolvedValue([{ text: 'data' }] as any);
+    const { result } = renderHook(() => useSageDesk(config));
+
+    await act(async () => {
+      result.current.open();
+    });
+
+    expect(retriever.fetchIndex).toHaveBeenCalledWith('index.json');
+    expect(EmbedderRuntime).toHaveBeenCalledTimes(1);
+    expect(result.current.state.engineStatus).toBe('ready');
+  });
+
+  describe('LLM mode', () => {
+    const llmConfig = {
+      mode: 'llm' as const,
+      endpoint: '/api/sagedesk',
+      agent: { name: 'LLM Bot', suggestedChips: ['Pricing?'] },
+    };
+
+    function mockEndpoint(data: unknown) {
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => data });
+      global.fetch = fetchMock as any;
+      return fetchMock;
+    }
+
+    it('is ready on open without constructing the embedder or fetching an index', async () => {
+      const { result } = renderHook(() => useSageDesk(llmConfig));
+
+      await act(async () => {
+        result.current.open();
+      });
+
+      expect(result.current.state.engineStatus).toBe('ready');
+      expect(EmbedderRuntime).not.toHaveBeenCalled();
+      expect(retriever.fetchIndex).not.toHaveBeenCalled();
+      expect(result.current.chips).toEqual(['Pricing?']);
+    });
+
+    it('posts { query } with no queryVector key', async () => {
+      const fetchMock = mockEndpoint({ answer: 'LLM answer', isFallback: false });
+      const { result } = renderHook(() => useSageDesk(llmConfig));
+
+      await act(async () => {
+        result.current.open();
+      });
+      await act(async () => {
+        await result.current.submit('  How much?  ');
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe('/api/sagedesk');
+      expect(JSON.parse(init.body)).toEqual({ query: 'How much?' });
+      expect(EmbedderRuntime).not.toHaveBeenCalled();
+      expect(result.current.state.messages.at(-1)?.text).toBe('LLM answer');
+    });
+
+    it('shows the fallback text when the server reports isFallback', async () => {
+      mockEndpoint({ answer: '', isFallback: true });
+      const { result } = renderHook(() => useSageDesk(llmConfig));
+
+      await act(async () => {
+        result.current.open();
+      });
+      await act(async () => {
+        await result.current.submit('Weather?');
+      });
+
+      const last = result.current.state.messages.at(-1);
+      expect(last?.text).toBe('Fallback message');
+      expect(last?.isFallback).toBe(true);
+    });
+
+    it('llm.embedQuery: true restores the 2.x flow (embedder loads, vector is sent)', async () => {
+      const fetchMock = mockEndpoint({ answer: 'LLM answer', isFallback: false });
+      const { result } = renderHook(() =>
+        useSageDesk({ ...llmConfig, llm: { embedQuery: true } })
+      );
+
+      await act(async () => {
+        result.current.open();
+      });
+
+      expect(EmbedderRuntime).toHaveBeenCalledTimes(1);
+      const embedder = vi.mocked(EmbedderRuntime).mock.results[0].value;
+      expect(embedder.load).toHaveBeenCalled();
+
+      await act(async () => {
+        await result.current.submit('How much?');
+      });
+
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+      expect(body.query).toBe('How much?');
+      expect(body.queryVector).toHaveLength(1);
+      expect(body.queryVector[0]).toBeCloseTo(0.1);
+    });
   });
 });

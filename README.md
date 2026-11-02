@@ -23,9 +23,11 @@ All embedding and semantic search runs entirely in the visitor's browser via Web
 
 ### LLM Mode
 
-The widget embeds the visitor's query in the browser (same WASM model as local mode), then posts `{ query, queryVector }` to your own backend. Your backend does retrieval against the prebuilt index and calls your LLM provider for synthesis. The API key lives in your environment variables and never touches the browser. sagedesk provides ready-made server handlers for Next.js and Express - you own your entire stack.
+The widget posts the visitor's question, `{ query }`, to your own backend. Your backend reads your `knowledge.json`, places it in the system prompt, and asks your LLM provider to answer from it. The API key lives in your environment variables and never touches the browser. sagedesk provides ready-made server handlers for Next.js and Express, and you own your entire stack.
 
-Because the embedder stays in the browser, the server function carries no native ONNX runtime and no model weights. It deploys cleanly on Vercel, AWS Lambda, and any other serverless platform with no special configuration - the built `sagedesk/server` bundle is under 10 KB.
+Nothing is downloaded into the browser and no WebAssembly runs: the widget is usable the moment it opens. The server loads no model either, so it deploys cleanly on Vercel, AWS Lambda, and any other serverless platform with no special configuration. You don't need `npx sagedesk build` for LLM mode.
+
+For large knowledge bases, the server can instead run a vector search against a prebuilt index (`retrieval: 'vector'`, the 2.x behaviour). See [Retrieval strategies](#retrieval-strategies).
 
 | | Local Mode | LLM Mode |
 |---|---|---|
@@ -34,7 +36,9 @@ Because the embedder stays in the browser, the server function carries no native
 | sagedesk infrastructure | None | None |
 | Answer style | Exact retrieval | Natural, synthesized |
 | Latency | < 100ms | 1–3 seconds |
-| Cost | Zero | Per-query LLM API cost |
+| Cost | Zero | Per-query LLM API cost (the knowledge base is sent with every question) |
+| Browser download | Embedding model (~23 MB) and WASM runtime | None |
+| Build step | `npx sagedesk build` | None (`knowledge.json` is read directly) |
 | Privacy | Fully local | Query sent to your LLM provider |
 | Error resilience | N/A | Built-in: timeouts, fallbacks, automatic recovery |
 
@@ -184,7 +188,7 @@ export default function RootLayout({ children }) {
 
 ## LLM Mode Setup
 
-LLM mode requires the same `knowledge.json` and built index from the steps above. You also need an API key from any supported provider (OpenAI, Anthropic, Gemini, DeepSeek, Groq, or any OpenAI-compatible service).
+LLM mode needs the `knowledge.json` from [Step 1](#step-1---write-your-knowledge-file) above. It does not need the built index. You also need an API key from any supported provider (OpenAI, Anthropic, Gemini, DeepSeek, Groq, or any OpenAI-compatible service).
 
 ### Step 1 - Add your API key
 
@@ -206,7 +210,7 @@ import { createSageDeskHandler } from 'sagedesk/server';
 import { resolve } from 'path';
 
 export const POST = createSageDeskHandler({
-  indexPath: resolve(process.cwd(), 'public', 'sagedesk-index.json'),
+  knowledgePath: resolve(process.cwd(), 'knowledge.json'),
   provider: 'deepseek',
   apiKey: process.env.SAGEDESK_LLM_API_KEY!,
   model: 'deepseek-chat',
@@ -224,18 +228,44 @@ const app = express();
 app.use(express.json());
 
 app.use('/api/sagedesk', createSageDeskMiddleware({
-  indexPath: resolve(process.cwd(), 'public', 'sagedesk-index.json'),
+  knowledgePath: resolve(process.cwd(), 'knowledge.json'),
   provider: 'openai',
   apiKey: process.env.SAGEDESK_LLM_API_KEY!,
   model: 'gpt-4o-mini',
 }));
 ```
 
-> **Serverless ready.** The handler does no embedding - it only reads the prebuilt index, runs an in-memory dot-product search, and proxies one HTTP call to your LLM provider. There is no `@huggingface/transformers` import, no `onnxruntime-node`, and no native binaries on the server, so no `next.config.js` workarounds, no `outputFileTracingIncludes`, and no Vercel function-size hacks are needed. Just import and mount the handler.
+> **Serverless ready.** The handler does no embedding. It reads `knowledge.json` once, caches it in memory, and proxies one HTTP call to your LLM provider. There is no `@huggingface/transformers` import, no `onnxruntime-node`, and no native binaries on the server, and the browser downloads no model either.
+>
+> On Vercel, make sure `knowledge.json` is bundled into the function. A file outside `public/` read with `fs` may need to be traced explicitly:
+>
+> ```ts
+> // next.config.ts
+> export default {
+>   outputFileTracingIncludes: { '/api/sagedesk': ['./knowledge.json'] },
+> };
+> ```
+
+### Retrieval strategies
+
+The handler chooses what the LLM sees in one of two ways:
+
+| `retrieval` | Needs | Widget sends | How it works |
+|---|---|---|---|
+| `'context'` (default when `knowledgePath` is set) | `knowledgePath` | `{ query }` | The whole knowledge base goes in the system prompt. The LLM decides whether it answers the question. |
+| `'vector'` (default when only `indexPath` is set) | `indexPath` from `npx sagedesk build` | `{ query, queryVector }` | The 2.x behaviour. The widget embeds the query in the browser (set `llm={{ embedQuery: true }}`), and the server sends the top matching chunks to the LLM. |
+
+Context retrieval suits the knowledge bases sagedesk targets: a support FAQ or a portfolio of a few dozen entries. A 50 entry, 40 KB `knowledge.json` is roughly 7,000 tokens.
+
+If the knowledge base grows past `maxContextTokens` (default `24000` estimated tokens), the server stops sending all of it and sends only the `topK` entries (default `8`) that best match the question by keyword. It logs one warning when this first happens. Keyword matching is weaker than vector search, so a knowledge base that size is a better fit for `retrieval: 'vector'`.
+
+> **Check your model's context window.** `maxContextTokens` must leave room for the system prompt, the question, and a 512 token answer. Small-context models (for example 8K models) need a lower value, such as `maxContextTokens: 5000`.
+
+When the knowledge does not contain the answer, the model replies with a sentinel the server turns into the standard fallback, so the visitor sees your `agent.fallback` text.
 
 ### Step 3 - Configure the widget
 
-Point the widget at your endpoint with `mode="llm"`. No `indexUrl` needed on the client.
+Point the widget at your endpoint with `mode="llm"`. No `indexUrl` needed on the client, and no model is loaded in the browser.
 
 #### React
 
@@ -303,7 +333,7 @@ If your provider is not listed above, pass the full API base URL as the `provide
 
 ```ts
 createSageDeskHandler({
-  indexPath: './public/support-index.json',
+  knowledgePath: './knowledge.json',
   provider: 'https://api.example.com/v1',  // Custom base URL
   apiKey: process.env.CUSTOM_LLM_API_KEY!,
   model: 'your-model-name',
@@ -314,14 +344,20 @@ createSageDeskHandler({
 
 | Option | Type | Required | Description |
 |---|:---:|:---:|---|
-| `indexPath` | `string` | yes | Filesystem path to the built index JSON. |
+| `knowledgePath` | `string` | one of the two | Filesystem path to your `knowledge.json`. Enables context retrieval. |
+| `indexPath` | `string` | one of the two | Filesystem path to the built index JSON. Required for `retrieval: 'vector'`. |
+| `retrieval` | `'context'`, `'vector'` | no | See [Retrieval strategies](#retrieval-strategies). Defaults to `'context'` when `knowledgePath` is set, otherwise `'vector'`. |
 | `provider` | `string` | yes | Provider name (e.g., `'openai'`, `'anthropic'`) or full API base URL (e.g., `'https://api.example.com/v1'`). |
 | `apiKey` | `string` | yes | LLM API key (server-side only). |
 | `model` | `string` | yes | Model name passed to the provider. |
-| `topK` | `number` | no | Number of chunks retrieved for context. Defaults to `5`. |
-| `minScore` | `number` | no | Minimum similarity score for a chunk. Defaults to `0.42`. |
-| `systemPrompt` | `string` | no | Override the default system prompt sent to the LLM. |
-| `llmTimeoutMs` | `number` | no | Timeout for LLM API calls in milliseconds. Defaults to `5000` (5 seconds). |
+| `systemPrompt` | `string` | no | Context retrieval: the base prompt (persona, tone, style rules). The server always appends the answer rules and the knowledge base after it. Vector retrieval: replaces the whole system prompt. |
+| `maxContextTokens` | `number` | no | Context retrieval. Largest knowledge prompt in estimated tokens (characters / 4). Defaults to `24000`. |
+| `topK` | `number` | no | Vector retrieval: chunks sent to the LLM, default `5`. Context retrieval: entries sent when the knowledge base exceeds `maxContextTokens`, default `8`. |
+| `minScore` | `number` | no | Vector retrieval. Minimum similarity score for a chunk. Defaults to `0.42`. |
+| `llmTimeoutMs` | `number` | no | Timeout for LLM API calls in milliseconds. Defaults to `15000` for context retrieval and `5000` for vector retrieval. |
+| `cacheTtlMs` | `number` | no | Context retrieval. Cache answers to identical questions for this long. Defaults to `0` (off). See [Security](#security-llm-mode). |
+| `promptCache` | `boolean` | no | Mark the system prompt with Anthropic `cache_control` so the knowledge block is cached by the provider. Use with `provider: 'anthropic'`, or with OpenRouter for Anthropic models. Defaults to `false`. |
+| `maxQueryLength` | `number` | no | Largest accepted question in characters. Defaults to `2000`. |
 | `allowedOrigins` | `string[]` | no | Allowlist of request origins (e.g. `['https://yoursite.com']`). When set, requests whose `Origin`/`Referer` doesn't match are rejected with `403`. Defense-in-depth, not authentication. See [Security](#security-llm-mode). |
 
 ---
@@ -332,7 +368,7 @@ sagedesk includes built-in resilience for LLM mode. If the LLM provider fails-wh
 
 ### How It Works
 
-1. **Request Timeout** - Each LLM request is automatically aborted if it exceeds `llmTimeoutMs` (default: 5 seconds). This prevents the widget from hanging.
+1. **Request Timeout** - Each LLM request is automatically aborted if it exceeds `llmTimeoutMs` (default: 15 seconds for context retrieval, 5 seconds for vector retrieval). This prevents the widget from hanging.
 
 2. **Automatic Fallback** - When an LLM request fails, the server returns the best matching knowledge chunks without synthesis. Visitors still get relevant, grounded information.
 
@@ -350,9 +386,20 @@ Your endpoint is a public route that proxies a paid LLM, so treat it like any ot
 
 Every request is validated before it reaches your LLM:
 
-- **Vector integrity** - the query vector must be finite and L2-normalized (unit length). The real widget always sends normalized vectors, so this rejects crafted vectors that try to inflate similarity scores to force matches and burn LLM calls.
-- **Dimension match** - the vector length must match your index. A mismatch returns a clear `400` explaining that the build-time and runtime embedding models must be the same.
-- **Query length cap** - queries over 2,000 characters are rejected to bound LLM input-token cost.
+- **Query length cap**: queries over `maxQueryLength` (default 2,000 characters) are rejected to bound LLM input-token cost.
+- **Vector integrity** (`retrieval: 'vector'` only): the query vector must be finite and L2-normalized (unit length), and its length must match your index. A dimension mismatch returns a clear `400` explaining that the build-time and runtime embedding models must be the same.
+
+### Cost: every question is an LLM call
+
+With context retrieval, **every accepted request calls your LLM**, and each call carries your whole knowledge base as input tokens. Vector retrieval skipped the LLM when nothing matched; context retrieval has no such gate, so off-topic and scripted requests cost money too. Rate limiting and a spend cap at your provider matter more than before.
+
+Ways to keep the cost down:
+
+- **Provider prompt caching.** The knowledge block is formatted identically on every request, so providers that cache long prompt prefixes (OpenAI and DeepSeek do this automatically) bill most of it at the cached rate. For Anthropic, set `promptCache: true`.
+- **`cacheTtlMs`.** An in-memory cache of answers to identical questions (trimmed, lowercased, whitespace collapsed), capped at 200 entries. Only successful answers are cached, never fallbacks or errors. On serverless platforms each instance has its own cache, so treat it as a saving for repeated questions such as your suggested chips, not a guarantee.
+- **A lower `maxQueryLength`**, for example `500`.
+
+Everything in `knowledge.json` is sent to the LLM, and a determined visitor can get the model to repeat it. Keep only public information in it.
 
 ### Origin allowlist
 
@@ -360,7 +407,7 @@ The widget runs on your own site, so you can restrict the endpoint to your origi
 
 ```ts
 createSageDeskHandler({
-  indexPath: resolve(process.cwd(), 'public', 'sagedesk-index.json'),
+  knowledgePath: resolve(process.cwd(), 'knowledge.json'),
   provider: 'openai',
   apiKey: process.env.SAGEDESK_LLM_API_KEY!,
   model: 'gpt-4o-mini',
@@ -380,7 +427,7 @@ sagedesk does **not** rate-limit for you, and a determined caller can still scri
 | **AWS** | API Gateway throttling, or AWS WAF rate-based rules. |
 | **Express / self-hosted** | `express-rate-limit`, or a reverse proxy (e.g. nginx `limit_req`). |
 
-Pair rate limiting with a sensible `llmTimeoutMs` and consider lowering `topK` to cap the cost of any single request.
+Pair rate limiting with a sensible `llmTimeoutMs`. With vector retrieval, consider lowering `topK` to cap the cost of any single request.
 
 ---
 
@@ -392,7 +439,7 @@ Applies to both modes.
 |---|:---:|:---:|---|
 | `name` | `string` | **Required** | Display name in the chat header. |
 | `theme` | `classic`, `light`, `dark` | `classic` | Visual style of the widget. |
-| `model` | `string` | `all-MiniLM-L6-v2` | Embedding model loaded by the browser. Must match the build-time model. Used by both modes - local mode embeds & searches in-browser; LLM mode embeds in-browser and posts the vector to your handler. |
+| `model` | `string` | `all-MiniLM-L6-v2` | Embedding model loaded by the browser. Must match the build-time model. Used by local mode, and by LLM mode only with `llm={{ embedQuery: true }}`. |
 | `accentColor` | `string` | `#534AB7` | Hex color for primary UI elements. |
 | `greeting` | `string` | - | Initial message shown to visitors. |
 | `fallback` | `string` | - | Message shown when no answer is found. |
@@ -402,11 +449,17 @@ Applies to both modes.
 | `contactUrl` | `string` | - | Link appended to fallback responses. |
 | `suggestedChips` | `string[]` | - | Override auto-generated suggested questions. |
 
+### LLM mode options (`llm`)
+
+| Field | Type | Default | Description |
+|---|:---:|:---:|---|
+| `embedQuery` | `boolean` | `false` | **Deprecated, removed in 4.0.** Loads the WASM embedder and sends `{ query, queryVector }` as in 2.x. Use it only while your server is still on 2.x, or runs `retrieval: 'vector'`. |
+
 ---
 
 ## Search Configuration (`SearchConfig`)
 
-Optional. Applies to both modes. Controls how semantic search matches answers.
+Optional. Local mode only: controls how in-browser semantic search matches answers. In LLM mode these settings live on the server handler (`topK`, `minScore`).
 
 | Field | Type | Default | Description |
 |---|:---:|:---:|---|
@@ -422,19 +475,13 @@ Optional. Applies to both modes. Controls how semantic search matches answers.
   agent={{ name: 'Support' }}
   search={{ minScore: 0.5, topK: 3 }}
 />
-
-// LLM mode
-<SageDeskWidget
-  mode="llm"
-  endpoint="/api/sagedesk"
-  agent={{ name: 'Support' }}
-  search={{ minScore: 0.6, topK: 5 }}
-/>
 ```
 
 ---
 
 ## Model Selection
+
+Applies to local mode and to LLM mode with `retrieval: 'vector'`. Context retrieval uses no embedding model.
 
 sagedesk defaults to `all-MiniLM-L6-v2` (~22MB), which offers an excellent balance of speed and quality for English. The model used at build time and at runtime must match.
 
@@ -445,13 +492,13 @@ sagedesk defaults to `all-MiniLM-L6-v2` (~22MB), which offers an excellent balan
 | `paraphrase-multilingual-MiniLM-L12-v2` | 384 | ~45 MB | 50+ languages. |
 | `all-mpnet-base-v2` | 768 | ~85 MB | Maximum semantic quality. |
 
-> **Important:** The `--model` flag in `npx sagedesk build` must match the `agent.model` prop on the widget. Both local mode and LLM mode embed in the browser using `agent.model`, and the resulting vectors must live in the same space as the index built by the CLI. **Mixing models across build time and runtime is not supported** - different models produce different-sized, non-comparable vectors (e.g. `all-mpnet-base-v2` is 768-dim while the others are 384-dim). In LLM mode a mismatch is caught on the server and returns a clear `400` telling you to align the models; in local mode, search simply fails to find matches. Whenever you change the model, rebuild the index **and** update `agent.model` together.
+> **Important:** The `--model` flag in `npx sagedesk build` must match the `agent.model` prop on the widget. Local mode, and LLM mode with `embedQuery`, embed in the browser using `agent.model`, and the resulting vectors must live in the same space as the index built by the CLI. **Mixing models across build time and runtime is not supported** - different models produce different-sized, non-comparable vectors (e.g. `all-mpnet-base-v2` is 768-dim while the others are 384-dim). In LLM mode a mismatch is caught on the server and returns a clear `400` telling you to align the models; in local mode, search simply fails to find matches. Whenever you change the model, rebuild the index **and** update `agent.model` together.
 
 ---
 
 ## Browser Support
 
-Requires **WebAssembly** support. Both local and LLM mode embed visitor queries in-browser, so the same WASM-capable browsers are required for both. WASM is supported by all modern browsers (Chrome 57+, Firefox 52+, Safari 11+, Edge 16+).
+Local mode requires **WebAssembly**, because it embeds visitor queries in the browser. WASM is supported by all modern browsers (Chrome 57+, Firefox 52+, Safari 11+, Edge 16+). LLM mode has no requirement beyond `fetch`, and needs no Content Security Policy entries for Hugging Face, jsDelivr or `'wasm-unsafe-eval'`.
 
 - Chrome 90+
 - Firefox 89+
@@ -459,6 +506,30 @@ Requires **WebAssembly** support. Both local and LLM mode embed visitor queries 
 - Edge 90+
 
 The widget degrades gracefully by hiding itself on unsupported browsers.
+
+---
+
+## Migrating from 2.x
+
+3.0 changes LLM mode only. Local mode is unchanged.
+
+**Upgrade the server before the widget.** A 3.x widget sends `{ query }` with no vector, which a 2.x server rejects with `400 Missing queryVector` (the visitor sees your fallback message).
+
+| Widget | Server | Result |
+|---|---|---|
+| 3.x | 3.x with `knowledgePath` | Works. No embedding anywhere. |
+| 2.x | 3.x with `knowledgePath` | Works. The 2.x widget still downloads the model and sends a vector, which the server ignores. The saving appears once the widget upgrades. |
+| 2.x | 3.x with `indexPath` only | Works as in 2.x (`retrieval: 'vector'`). |
+| 3.x | 2.x | Fails with `400 Missing queryVector`. Upgrade the server, or set `llm={{ embedQuery: true }}` on the widget as a stopgap. |
+
+Steps:
+
+1. Upgrade the server package. Replace `indexPath` with `knowledgePath` pointing at your `knowledge.json`, and make sure the file is deployed with the function.
+2. If you pass `systemPrompt`, review it. It is now the **base** of the prompt: the server appends the answer rules and the knowledge after it. Keep persona, tone and style rules in it, and remove any instructions about how to handle missing answers.
+3. Upgrade the widget. Remove any code that preloads `@huggingface/transformers`, and the Hugging Face, jsDelivr and `'wasm-unsafe-eval'` entries from your Content Security Policy.
+4. If your site only uses LLM mode, remove `npx sagedesk build` from your build and delete the generated index.
+
+To stay on vector retrieval instead, keep `indexPath` (or set `retrieval: 'vector'`) on the server and set `llm={{ embedQuery: true }}` on the widget.
 
 ---
 

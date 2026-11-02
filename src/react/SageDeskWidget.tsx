@@ -841,17 +841,19 @@ function DarkTheme(p: ThemeRenderProps) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export interface SageDeskWidgetProps {
-  /** Operating mode. 'local' (default) runs entirely in the browser via WASM. 'llm' posts to the consumer's own backend. */
+  /** Operating mode. 'local' (default) runs entirely in the browser via WASM. 'llm' posts the query to the consumer's own backend and loads no model. */
   mode?: SageDeskMode;
   /** URL to the pre-built vector index. Required in local mode. */
   indexUrl?: string;
   /** Consumer's backend endpoint that accepts POST { query }. Required in llm mode. */
   endpoint?: string;
+  /** LLM mode options. See LLMModeConfig. */
+  llm?: SageDeskConfig['llm'];
   agent: SageDeskConfig['agent'];
   search?: SageDeskConfig['search'];
 }
 
-export function SageDeskWidget({ mode, indexUrl, endpoint, agent, search }: SageDeskWidgetProps) {
+export function SageDeskWidget({ mode, indexUrl, endpoint, llm, agent, search }: SageDeskWidgetProps) {
   const resolvedMode = mode ?? 'local';
 
   if (!agent?.name) {
@@ -873,8 +875,8 @@ export function SageDeskWidget({ mode, indexUrl, endpoint, agent, search }: Sage
   }
 
   const config = useMemo<SageDeskConfig>(
-    () => ({ mode: resolvedMode, indexUrl, endpoint, agent, search }),
-    [resolvedMode, indexUrl, endpoint, agent, search]
+    () => ({ mode: resolvedMode, indexUrl, endpoint, llm, agent, search }),
+    [resolvedMode, indexUrl, endpoint, llm, agent, search]
   );
   const { state, chips, open, close, submit } = useSageDesk(config);
 

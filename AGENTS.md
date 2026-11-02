@@ -24,7 +24,9 @@ All embedding, search, and retrieval happens in the visitor's browser via WebAss
 
 ### Mode 2. LLM Mode
 
-The consumer configures a server-side handler using a sagedesk-provided export. The widget embeds the visitor's query in the browser (same WASM model as local mode), then posts both the query string and the 384-dim query vector to that handler. The handler runs vector search against the prebuilt index and passes the top matching chunks to an LLM for answer synthesis. The LLM API key lives in the consumer's own environment variables and never touches the browser. The server itself never imports `@huggingface/transformers` or any native ONNX runtime, which keeps the function small and serverless-friendly.
+The consumer configures a server-side handler using a sagedesk-provided export. The widget posts only the visitor's query string to that handler. By default (context retrieval, `knowledgePath`) the handler reads the consumer's `knowledge.json`, places the whole knowledge base in the system prompt, and asks the LLM to answer from it. Nothing is downloaded into the browser, no WebAssembly runs, and no build step is needed. The LLM API key lives in the consumer's own environment variables and never touches the browser. The server never imports `@huggingface/transformers` or any native ONNX runtime, which keeps the function small and serverless-friendly.
+
+For large knowledge bases the handler also supports `retrieval: 'vector'`, the 2.x flow: the widget (with the deprecated `llm.embedQuery` option) embeds the query with the same WASM model as local mode and posts the 384-dim vector too, and the server runs vector search against the prebuilt index and sends the top matching chunks to the LLM.
 
 sagedesk does not operate any server in this mode. The consumer owns the entire stack.
 
@@ -48,11 +50,15 @@ When a visitor opens the site the widget fetches the pre-built vector index and 
 
 ### Phase 2. Runtime in LLM Mode (Consumer Server plus Visitor Browser)
 
-When a visitor submits a query the widget embeds it in the browser using the same all-MiniLM-L6-v2 WASM model that local mode uses, then sends a POST request to the consumer's own backend endpoint with both the raw query string and the 384-dim query vector. The sagedesk server handler searches the vector index and retrieves the top K matching chunks. It builds a grounded prompt containing those chunks and calls the configured LLM provider API using the key from the consumer's environment variables. The LLM synthesizes a natural language answer strictly from the provided chunks. The answer is returned to the widget and displayed.
+When a visitor submits a query the widget sends a POST request to the consumer's own backend endpoint with `{ query }`. The widget is ready the moment it opens, because it loads no model. The sagedesk server handler loads `knowledge.json` (cached after the first request), formats every entry into a deterministic knowledge block, and builds a system prompt from the consumer's base prompt, a fixed answer contract, and the knowledge block. The query is the only user message. The handler calls the configured LLM provider API using the key from the consumer's environment variables, and the LLM answers strictly from the knowledge.
 
-If the retrieved chunks do not contain a confident answer, the LLM is instructed to return a friendly fallback message rather than hallucinate.
+If the knowledge does not contain the answer, the LLM replies with the `[[NO_ANSWER]]` sentinel, which the server turns into `isFallback: true` so the widget shows the configured fallback message rather than a hallucinated answer.
 
-Embedding stays on the client so the server function carries no native ONNX runtime and no model weights - the built `sagedesk/server` bundle is under 10 KB and deploys cleanly on Vercel, AWS Lambda, and any other serverless platform with no special configuration.
+If the knowledge base exceeds `maxContextTokens` (default 24000 estimated tokens, configurable), the handler sends only the top K entries by keyword match and warns once. With `retrieval: 'vector'` the handler instead searches the prebuilt vector index with the query vector the widget sent, as in 2.x.
+
+Because every accepted request calls the LLM with the whole knowledge base, the consumer's rate limiting and provider spend cap matter. Provider prompt caching (automatic on OpenAI and DeepSeek, `promptCache: true` for Anthropic) and the optional `cacheTtlMs` answer cache reduce the cost.
+
+The server function carries no native ONNX runtime and no model weights, and deploys cleanly on Vercel, AWS Lambda, and any other serverless platform.
 
 ---
 
@@ -63,19 +69,19 @@ Embedding stays on the client so the server function carries no native ONNX runt
 ```
 Consumer's Browser (sagedesk widget)
         |
-        |-- Embed query (all-MiniLM-L6-v2, in-browser via WASM)
-        |
-        |  POST { query, queryVector }
+        |  POST { query }
         v
 Consumer's Own Server
         |
-        |-- 1. Search support-index.json with queryVector, retrieve top-K chunks
-        |-- 2. Build grounded prompt with system instructions and chunks
+        |-- 1. Load knowledge.json (cached), format the knowledge block
+        |-- 2. Build system prompt: base prompt + answer contract + knowledge
         |-- 3. Call LLM provider API (key from consumer .env)
-        |-- 4. Return synthesized answer
+        |-- 4. Map [[NO_ANSWER]] to isFallback, return the answer
         v
 Consumer's Browser (answer displayed in widget)
 ```
+
+With `retrieval: 'vector'` the widget also embeds the query in the browser and posts `queryVector`, and step 1 becomes a vector search of `support-index.json` for the top-K chunks.
 
 ### What sagedesk Ships for LLM Mode
 
@@ -100,7 +106,7 @@ import { SageDesk } from "sagedesk"
 import { createSageDeskHandler } from "sagedesk/server"
 
 export const POST = createSageDeskHandler({
-  indexPath: "./public/support-index.json",
+  knowledgePath: "./knowledge.json",
   provider: "deepseek",
   apiKey: process.env.SAGEDESK_LLM_API_KEY,
   model: "deepseek-chat",
@@ -113,7 +119,7 @@ export const POST = createSageDeskHandler({
 import { createSageDeskMiddleware } from "sagedesk/server"
 
 app.use("/api/sagedesk", createSageDeskMiddleware({
-  indexPath: "./public/support-index.json",
+  knowledgePath: "./knowledge.json",
   provider: "openai",
   apiKey: process.env.SAGEDESK_LLM_API_KEY,
   model: "gpt-4o-mini",
@@ -138,7 +144,7 @@ The handler is provider-agnostic. Any provider with an OpenAI-compatible chat co
 
 ### LLM Grounding and Restrictions
 
-The LLM is restricted entirely through the system prompt. It receives only the top-K chunks retrieved from the consumer's vector index. It has no tools, no web search access, and no function calling configured. The system prompt instructs it to answer strictly from the provided context and to return a friendly fallback if the answer is not present. This prevents hallucination and keeps answers grounded in the developer-authored knowledge base.
+The LLM is restricted entirely through the system prompt. It receives only the consumer's knowledge base (or, with vector retrieval, the top-K chunks from the vector index). It has no tools, no web search access, and no function calling configured. The system prompt instructs it to answer strictly from the provided context and to return a friendly fallback if the answer is not present. This prevents hallucination and keeps answers grounded in the developer-authored knowledge base.
 
 ### Error Handling and Resilience
 
@@ -183,7 +189,7 @@ Visitors always receive a helpful response. The widget never shows an error mess
 
 ## The Model Strategy
 
-sagedesk uses a single-model strategy to ensure vector space compatibility. The default model is all-MiniLM-L6-v2, approximately 22MB. It is fast, lightweight, and highly effective for semantic similarity. The same model is used at build time (CLI, in Node.js) and at runtime (visitor browser, in WASM), in both local and LLM mode. The server handler does not run the model - it only consumes vectors produced by the browser. Developers can choose other models such as all-mpnet-base-v2 for higher quality at the cost of a larger download, provided the same model is used consistently between the build CLI and the widget's `agent.model` prop.
+sagedesk uses a single-model strategy to ensure vector space compatibility. The default model is all-MiniLM-L6-v2, approximately 22MB. It is fast, lightweight, and highly effective for semantic similarity. The same model is used at build time (CLI, in Node.js) and at runtime (visitor browser, in WASM) in local mode, and in LLM mode with vector retrieval. LLM mode with context retrieval uses no embedding model at all. The server handler never runs the model. Developers can choose other models such as all-mpnet-base-v2 for higher quality at the cost of a larger download, provided the same model is used consistently between the build CLI and the widget's `agent.model` prop.
 
 ---
 
@@ -212,6 +218,7 @@ Next.js is a specialized wrapper with ssr: false to support App Router and Turbo
 | sagedesk infrastructure | None | None |
 | Answer quality | Exact retrieval | Natural, synthesized |
 | Latency | Under 100ms | 1 to 3 seconds |
+| Browser download | Embedding model and WASM runtime | None |
 | Cost | Zero | Per-query LLM API cost |
 | Privacy | Fully local | Query sent to LLM provider |
 | Hallucination risk | None | Mitigated via grounded prompt |
